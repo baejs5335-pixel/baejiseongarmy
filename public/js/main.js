@@ -51,7 +51,7 @@ const zoomFov = (zoom) => 2 * Math.atan(Math.tan(BASE_FOV * DEG / 2) / zoom) / D
 
 // ── 렌더러 / 씬 ───────────────────────────
 const renderer = new THREE.WebGLRenderer({ canvas: $('#game'), antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, cfg.renderScale));
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.03, 250);
 camera.rotation.order = 'YXZ';
@@ -63,7 +63,7 @@ const fx = new Feedback(camera, sfx);
 const vm = new Viewmodel(camera);
 const input = new Input();
 const assist = new AimAssist();
-const voice = new Voice();
+const voice = new Voice(sfx);
 // 육성: 강화·파츠가 적용된 내 무기 스펙 (AI는 기본 스펙 사용)
 const prog = new Progression();
 let EFF = {};
@@ -133,7 +133,7 @@ if (isMatch) {
       if (killer === player && victim !== player) onPlayerKill(w, head, back);
       if (victim.team === 'A' && !victim.isPlayer) {
         const ally = match.combatants.find((c) => c.team === 'A' && !c.dead && !c.isPlayer);
-        if (ally) voice.say('allyDown', speakerOf(ally), { cooldown: 8 });
+        if (ally) voice.say('allyDown', speakerOf(ally), { cooldown: 8, radio: true });
       }
     },
     onEnd: (winner) => {
@@ -160,7 +160,7 @@ if (isMatch) {
         sfx.shotAt(w, pos, occluded(pos), s.team === 'A' ? 0.75 : 1);
         if (s.team !== 'A' && d < 80) fx.soundPing(relAngle(s.pos), 'shot', 1 - d / 80);
       },
-      spotted: (s) => { if (s.team === 'A') voice.say('spotted', speakerOf(s), { cooldown: 6 }); },
+      spotted: (s) => { if (s.team === 'A') voice.say('spotted', speakerOf(s), { cooldown: 6, radio: true }); },
     },
   });
   // 피격: 빨간 화면 + 공격자 방향 표시 + 진동
@@ -210,11 +210,12 @@ function onPlayerKill(w, head, back) {
 }
 
 const mapView = new MapView(MAP, world, isMatch ? null : (x, z) => { P.pos.set(x, 0, z); P.vel.set(0, 0, 0); });
-const tuning = new Tuning(() => input.applyConfig(), () => {
+const tuning = new Tuning(() => { input.applyConfig(); resize(); }, () => {
   // 무기 밸런스 패널에서 탄창 크기를 줄였을 때 현재 탄약 정리
   refreshLoadout();
 }, () => world.rebuildBots(), {
   onEditHud: () => { tuning.toggle(false); layout.openEditor(); },
+  voiceInfo: () => voice.describe(),
   onVoiceTest: (key) => voice.say(key, ['start', 'multi2'].includes(key) ? ANNOUNCER : me(), { cooldown: 0, priority: true }),
 });
 
@@ -233,6 +234,7 @@ const modeSelect = new ModeSelect(URL_STATE.mode, (mode) => {
 }, () => lobby.toggle(true));
 
 function resize() {
+  renderer.setPixelRatio(Math.min(devicePixelRatio, cfg.renderScale));
   renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
@@ -422,7 +424,7 @@ function flushHits() {
 const hud = {
   cur: $('#ammo-cur'), max: $('#ammo-max'), name: $('#weapon-name'),
   bar: $('#reload-bar'), barFill: $('#reload-bar i'), stats: $('#stats'),
-  lobbyDot: $('#btn-lobby i'), ads: $('#btn-ads'), crouch: $('#btn-crouch'), mode: $('#btn-mode'), scope: $('#btn-scope'),
+  lobbyDot: $('#btn-menu i'), ads: $('#btn-ads'), crouch: $('#btn-crouch'), mode: $('#btn-mode'), scope: $('#btn-scope'),
 };
 let statT = 0, frames = 0, fps = 0;
 function updateHud(dt, w, a) {
@@ -480,6 +482,7 @@ function frame(now) {
   if (press.has('modes')) modeSelect.toggle(true);
   if (press.has('score')) mhud?.toggleBoard();
   if (press.has('lobby')) lobby.toggle(true);
+  if (press.has('menu')) quickMenu.hidden = !quickMenu.hidden;
   hud.lobbyDot.hidden = !prog.claimable();
   hud.stats.hidden = !cfg.showStats;
   if (world.hitboxVisible !== cfg.showHitboxes) world.setHitboxVisible(cfg.showHitboxes);
@@ -704,6 +707,37 @@ function frame(now) {
 refreshLoadout();
 switchWeapon(allowed.includes(CH.weapon) ? CH.weapon : allowed[0]);
 requestAnimationFrame(frame);
+
+// ── ☰ 빠른 메뉴 (모바일: 작은 아이콘 대신 큰 버튼 한곳에) ─────
+const quickMenu = $('#quickmenu');
+quickMenu.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-q]');
+  if (!b && e.target !== quickMenu) return;
+  quickMenu.hidden = true;
+  ({
+    lobby: () => lobby.toggle(true),
+    modes: () => modeSelect.toggle(true),
+    char: () => charSelect.toggle(true),
+    map: () => mapView.toggle(true),
+    tune: () => tuning.toggle(true),
+    hud: () => layout.openEditor(),
+    fullscreen: () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.()
+      .then(() => screen.orientation?.lock?.('landscape')).catch(() => {})),
+  })[b?.dataset.q]?.();
+});
+
+// 설치 안내: 아이폰은 전체 화면 API가 없어 "홈 화면에 추가"가 유일한 전체 화면 방법
+{
+  const standalone = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone;
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const hint = $('#install-hint');
+  if (!standalone && matchMedia('(pointer: coarse)').matches) {
+    hint.hidden = false;
+    hint.textContent = ios
+      ? '📲 Safari 공유 버튼 → "홈 화면에 추가"로 설치하면 주소창 없이 전체 화면으로 플레이할 수 있어요'
+      : '📲 브라우저 메뉴 → "홈 화면에 추가"(앱 설치)로 설치하면 전체 화면·가로 모드로 바로 실행돼요';
+  }
+}
 
 // ── 시작 화면 → 모드 선택 → 캐릭터 선택 ─────
 function requestFullscreen() {

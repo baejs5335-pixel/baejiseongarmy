@@ -55,6 +55,7 @@ export const DEFAULTS = {
   // HUD
   showStats: false,
   minimapRange: 30,
+  renderScale: 1.5,
 };
 
 export const SCHEMA = [
@@ -120,6 +121,7 @@ export const SCHEMA = [
     { key: 'subtitles', label: '보이스 자막', type: 'bool' },
   ] },
   { group: 'HUD', items: [
+    { key: 'renderScale', label: '그래픽 해상도', min: 0.6, max: 2, step: 0.1, hint: '낮출수록 프레임이 올라가고 배터리를 덜 씁니다 (폰이 버벅이면 1.0 이하)' },
     { key: 'minimapRange', label: '미니맵 반경', min: 15, max: 60, step: 1, unit: 'm' },
     { key: 'showStats', label: '디버그 정보 표시 (FPS·명중률)', type: 'bool' },
   ] },

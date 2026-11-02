@@ -230,6 +230,37 @@ export class Sfx {
   dry() { this.tone(900, 0.02, 'square', 0.08); }
   hurt() { this.tone(180, 0.09, 'sawtooth', 0.18); }
 
+  // 녹음 파일 재생 (보이스 팩). radio = 무전기 음질(대역 제한 + 약한 찌그러짐) + 잡음
+  async playFile(url, { radio = false, gain = 1 } = {}) {
+    if (!this.ctx) return;
+    this.files ||= {};
+    try {
+      this.files[url] ||= fetch(url).then((r) => r.arrayBuffer()).then((b) => this.ctx.decodeAudioData(b));
+      const buf = await this.files[url];
+      const c = this.ctx, src = c.createBufferSource();
+      src.buffer = buf;
+      const out = this.chain(null, { gain });
+      if (radio) {
+        const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 450;
+        const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3200;
+        const ws = c.createWaveShaper();
+        ws.curve = Float32Array.from({ length: 256 }, (_, i) => Math.tanh((i / 128 - 1) * 2.2));
+        src.connect(hp).connect(lp).connect(ws).connect(out);
+        this.radio(true);
+        src.onended = () => this.radio(false);
+      } else src.connect(out);
+      src.start();
+    } catch { delete this.files[url]; }
+  }
+
+  // 무전기: 켤 때 "치익" + 짧은 비프, 끌 때 "칙"
+  radio(open) {
+    if (!this.ctx) return;
+    const out = this.chain(null, { gain: 0.22 }), t = this.t;
+    this.burst(out, t, { type: 'bandpass', f: 2600, q: 1.5, peak: 0.8, decay: open ? 0.12 : 0.07 });
+    if (open) this.osc(out, t + 0.02, { type: 'square', f: 1800, peak: 0.15, decay: 0.04 });
+  }
+
   swing(heavy, pos) {
     if (!this.ctx) return;
     const out = this.chain(pos || null, { gain: heavy ? 0.5 : 0.35, far: pos ? this.dist(pos) : 0 });

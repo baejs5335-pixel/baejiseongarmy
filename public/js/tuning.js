@@ -109,7 +109,7 @@ export class Tuning {
       for (const it of sec.items) pane.appendChild(this.row(it));
     }
     const vt = document.createElement('div');
-    vt.innerHTML = `<h3>보이스 미리 듣기</h3><div class="tn-presets">${Object.entries(LINE_LABELS).map(([k, v]) => `<button data-voice="${k}">${v}</button>`).join('')}</div>`;
+    vt.innerHTML = `<h3>보이스 미리 듣기</h3><div class="hint">${this.extra.voiceInfo?.() || ''}</div><div class="tn-presets">${Object.entries(LINE_LABELS).map(([k, v]) => `<button data-voice="${k}">${v}</button>`).join('')}</div>`;
     vt.querySelectorAll('[data-voice]').forEach((b) => b.addEventListener('click', () => this.extra.onVoiceTest?.(b.dataset.voice)));
     pane.appendChild(vt);
     const foot = document.createElement('div');

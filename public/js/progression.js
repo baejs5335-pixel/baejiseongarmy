@@ -12,10 +12,12 @@ const KEY = 'ss-profile-v1';
 export const GRADES = [
   { name: '일반', color: '#c9d1e0', k: 1.0, slots: 2 },
   { name: '희귀', color: '#4a9dff', k: 1.3, slots: 3 },
-  { name: '전설', color: '#ffc933', k: 1.6, slots: 4 },
+  { name: '전설', color: '#ffc933', k: 1.6, slots: 3 },
 ];
-export const SLOTS = { muzzle: '총구', mag: '탄창', grip: '손잡이', stock: '개머리판' };
-export const SLOT_ORDER = ['muzzle', 'mag', 'grip', 'stock'];
+// 전설 무기: 장착한 파츠 효과 +20%
+export const LEGEND_PART_BONUS = 1.2;
+export const SLOTS = { muzzle: '총구', mag: '탄창', stock: '개머리판' };
+export const SLOT_ORDER = ['muzzle', 'mag', 'stock'];
 export const MAX_ENH = 5;
 
 // k = 파츠 등급 배율 (일반 1 / 희귀 1.3 / 전설 1.6)
@@ -36,15 +38,6 @@ export const PARTS = {
   quickmag: { slot: 'mag', name: '빠른 교체 탄창', icon: '⚡',
     desc: (k) => `장전 시간 -${pct(0.18 * k)}`,
     apply(w, k) { w.reloadTac *= 1 - 0.18 * k; w.reloadEmpty *= 1 - 0.18 * k; } },
-  vgrip: { slot: 'grip', name: '수직 손잡이', icon: '✊',
-    desc: (k) => `반동 -${pct(0.1 * k)}`,
-    apply(w, k) { w.recoil.scale *= 1 - 0.1 * k; } },
-  agrip: { slot: 'grip', name: '앵글 손잡이', icon: '📐',
-    desc: (k) => `정조준 전환 -${pct(0.15 * k)}`,
-    apply(w, k) { w.adsTime *= 1 - 0.15 * k; } },
-  laser: { slot: 'grip', name: '레이저', icon: '🔴',
-    desc: (k) => `지향사격 탄퍼짐 -${pct(0.2 * k)}`,
-    apply(w, k) { w.hip.base *= 1 - 0.2 * k; w.hip.max *= 1 - 0.15 * k; } },
   tacstock: { slot: 'stock', name: '전술 개머리판', icon: '🏃',
     desc: (k) => `정조준 이동 탄퍼짐 -${pct(0.25 * k)} · 이동 속도 +${pct(0.02 * k)}`,
     apply(w, k) { w.ads.move *= 1 - 0.25 * k; w.mobility *= 1 + 0.02 * k; } },
@@ -103,7 +96,7 @@ function fresh() {
   return {
     v: 1, level: 1, xp: 0, gold: 1500, gems: 50, pity: 0, nextUid: 3,
     weapons,
-    parts: [{ uid: 1, id: 'vgrip', grade: 0 }, { uid: 2, id: 'extmag', grade: 0 }], // 시작 지급
+    parts: [{ uid: 1, id: 'flashhider', grade: 0 }, { uid: 2, id: 'extmag', grade: 0 }], // 시작 지급
     daily: null,
     ach: { prog: {}, claimed: {} },
   };
@@ -113,6 +106,12 @@ export class Progression {
   constructor() {
     try { this.p = JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch { this.p = fresh(); }
     for (const k of GUN_ORDER) this.p.weapons[k] ||= { grade: 0, enh: 0, parts: {} };
+    // 없어진 파츠(손잡이 등) 정리
+    this.p.parts = this.p.parts.filter((x) => PARTS[x.id]);
+    for (const k of GUN_ORDER) {
+      const ps = this.p.weapons[k].parts;
+      for (const slot in ps) if (!SLOTS[slot] || !this.part(ps[slot])) delete ps[slot];
+    }
     this.listeners = new Set();
     this.toast = null;
     this.rollDaily();
@@ -154,7 +153,7 @@ export class Progression {
     w.reloadEmpty *= 1 - 0.015 * st.enh;
     for (const slot of SLOT_ORDER) {
       const pt = this.part(st.parts[slot]);
-      if (pt) PARTS[pt.id].apply(w, GRADES[pt.grade].k);
+      if (pt) PARTS[pt.id].apply(w, GRADES[pt.grade].k * (st.grade === 2 ? LEGEND_PART_BONUS : 1));
     }
     if (w.suppressed) w.sfx = { ...w.sfx, cut: w.sfx.cut * 0.4, gain: w.sfx.gain * 0.45, thump: w.sfx.thump * 0.5 };
     return w;

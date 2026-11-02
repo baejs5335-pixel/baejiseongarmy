@@ -1,6 +1,6 @@
 // 병영 화면: 무기고(강화·등급·파츠) / 상점(파츠·보급 상자·환전) / 일일 미션 / 업적
 import { WEAPONS, GUN_ORDER } from './weapons.js';
-import { GRADES, SLOTS, SLOT_ORDER, PARTS, ECON, MAX_ENH, DAILY_BONUS } from './progression.js';
+import { GRADES, SLOTS, SLOT_ORDER, PARTS, ECON, MAX_ENH, DAILY_BONUS, LEGEND_PART_BONUS } from './progression.js';
 
 const cost = (c) => [c.gold ? `🪙${c.gold.toLocaleString()}` : '', c.gems ? `💎${c.gems}` : ''].filter(Boolean).join(' ');
 const gradeTag = (g) => `<span class="gr" style="color:${GRADES[g].color}">${GRADES[g].name}</span>`;
@@ -78,7 +78,7 @@ export class Lobby {
       const locked = i >= pr.slotsOpen(this.wKey);
       const pt = pr.part(st.parts[slot]);
       return `<button class="lb-slot ${locked ? 'locked' : ''} ${this.slot === slot ? 'on' : ''}" ${locked ? '' : `data-act="slot" data-slot="${slot}"`}>
-        <small>${SLOTS[slot]}</small>${locked ? `🔒 ${GRADES[i === 2 ? 1 : 2].name}부터` : pt ? `${PARTS[pt.id].icon} ${PARTS[pt.id].name} ${gradeTag(pt.grade)}` : '<em>비어 있음</em>'}</button>`;
+        <small>${SLOTS[slot]}</small>${locked ? `🔒 희귀부터` : pt ? `${PARTS[pt.id].icon} ${PARTS[pt.id].name} ${gradeTag(pt.grade)}${st.grade === 2 ? ` <b class="boost">×${LEGEND_PART_BONUS}</b>` : ''}` : '<em>비어 있음</em>'}</button>`;
     }).join('');
     let inv = '';
     if (this.slot) {
@@ -99,7 +99,7 @@ export class Lobby {
           <button data-act="enhance" ${enhCost ? '' : 'disabled'}>강화 +${Math.min(MAX_ENH, st.enh + 1)} ${enhCost ? cost(enhCost) : '(최대)'}</button>
           <button data-act="gradeup" ${upCost && st.enh >= MAX_ENH ? '' : 'disabled'}>등급 상승 → ${upCost ? GRADES[st.grade + 1].name + ' ' + cost(upCost) : '최고 등급'}</button>
         </div>
-        <p class="lb-note">강화: 단계마다 반동 -2% · 장전 -1.5% / 등급: 파츠 슬롯 +1 · 무기 색상 변경. <b>데미지는 오르지 않습니다</b> (처치 탄수 구간 보호).</p>
+        <p class="lb-note">강화: 단계마다 반동 -2% · 장전 -1.5% / 희귀: 개머리판 슬롯 해금 · 전설: 파츠 효과 +20% · 무기 색상 변경. <b>데미지는 오르지 않습니다</b> (처치 탄수 구간 보호).</p>
         <div class="lb-slots">${slots}</div>
         ${inv}
       </div>

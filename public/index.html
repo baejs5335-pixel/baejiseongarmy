@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b0d16">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>스페셜 솔져 · 조작감 테스트</title>
 <link rel="stylesheet" href="css/style.css">
 <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>
@@ -51,11 +55,12 @@
   <button class="btn" id="btn-crouch" data-press="crouch"><span>앉기</span></button>
   <button class="btn" id="btn-jump" data-press="jump"><span>점프</span></button>
   <button class="btn" id="btn-reload" data-press="reload"><span>R</span></button>
-  <button id="btn-lobby" data-press="lobby" title="병영">🎒<i hidden></i></button>
-  <button id="btn-modes" data-press="modes" title="모드 선택">🎮</button>
-  <button id="btn-char" data-press="char" title="캐릭터">👤</button>
+  <button id="btn-menu" data-press="menu" title="메뉴">☰<i hidden></i></button>
+  <button id="btn-lobby" class="top-old" data-press="lobby" title="병영">🎒</button>
+  <button id="btn-modes" class="top-old" data-press="modes" title="모드 선택">🎮</button>
+  <button id="btn-char" class="top-old" data-press="char" title="캐릭터">👤</button>
   <button id="btn-map" data-press="map" title="맵 분석">🗺</button>
-  <button id="btn-tune" title="튜닝">⚙</button>
+  <button id="btn-tune" class="top-old" title="튜닝">⚙</button>
 </div>
 
 <div id="tuning" hidden></div>
@@ -64,6 +69,18 @@
 <div id="modeselect" hidden></div>
 <div id="layout-editor" hidden></div>
 <div id="lobby" hidden></div>
+<div id="quickmenu" hidden>
+  <div class="qm-grid">
+    <button data-q="lobby">🎒<span>병영</span></button>
+    <button data-q="modes">🎮<span>모드</span></button>
+    <button data-q="char">👤<span>캐릭터</span></button>
+    <button data-q="map">🗺<span>맵 분석</span></button>
+    <button data-q="tune">⚙<span>설정</span></button>
+    <button data-q="hud">🖐<span>HUD 편집</span></button>
+    <button data-q="fullscreen">⛶<span>전체 화면</span></button>
+    <button data-q="close">✕<span>닫기</span></button>
+  </div>
+</div>
 <div id="toast"></div>
 
 <div id="start">
@@ -79,6 +96,7 @@
     </ul>
     <p class="pc">PC: WASD 이동 · 마우스 드래그 시점 · F 발사 · Space 점프 · Q 조준 · C 앉기 · Tab 스코어보드 · R 재장전 · B 사격 모드 · T 조준경 · M 맵 · 1~5 무기 · L 마우스 고정</p>
     <button id="start-btn">탭하여 시작</button>
+    <p id="install-hint" hidden></p>
   </div>
 </div>
 <div id="rotate">📱↻ 가로 모드로 돌려주세요</div>

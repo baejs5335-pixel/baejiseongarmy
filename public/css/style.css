@@ -540,3 +540,72 @@ body.editing #hud .btn, body.editing #weapons, body.editing #gun-opts, body.edit
 .rs-reward { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; font-weight: 800; }
 .rs-reward span { background: rgba(42,49,70,.8); padding: 4px 12px; border-radius: 999px; display: flex; align-items: center; gap: 6px; }
 .rs-reward .up { background: #ffb02e; color: #1a1a1a; }
+
+/* ══ 모바일 사용성 ════════════════════════════════════════
+   - 터치 대상 최소 44px, 상단은 🗺 + ☰ 두 개만
+   - 주소창이 접히는 모바일 브라우저 대응(dvh), 노치 안전 영역
+   - 더블탭 확대 방지(touch-action: manipulation) */
+#game { height: 100vh; height: 100dvh; }
+button { touch-action: manipulation; }
+.top-old { display: none !important; }
+#btn-menu, #btn-map {
+  position: fixed; top: calc(6px + env(safe-area-inset-top)); width: 44px; height: 44px; padding: 0; font-size: 20px;
+  border-radius: 10px; border: 2px solid rgba(255,255,255,.55); background: rgba(20,24,36,.65); color: #fff; font-weight: 800;
+}
+#btn-menu { right: calc(8px + env(safe-area-inset-right)); }
+#btn-map { right: calc(58px + env(safe-area-inset-right)); }
+#btn-menu i { position: absolute; right: -3px; top: -3px; width: 12px; height: 12px; border-radius: 50%; background: #ff3b3b; border: 2px solid #fff; }
+#killfeed { top: calc(56px + env(safe-area-inset-top)); }
+#minimap { top: calc(6px + env(safe-area-inset-top)); }
+
+#quickmenu {
+  position: fixed; inset: 0; z-index: 42; display: grid; place-items: center; background: rgba(8,10,18,.6);
+}
+#quickmenu[hidden] { display: none; }
+.qm-grid { display: grid; grid-template-columns: repeat(4, minmax(88px, 120px)); gap: 10px; }
+.qm-grid button {
+  height: 84px; border-radius: 16px; border: 2px solid rgba(255,255,255,.25); background: rgba(30,36,54,.95); color: #fff;
+  font-size: 28px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+}
+.qm-grid button span { font-size: 13px; font-weight: 800; }
+.qm-grid button:active { background: #ffb02e; color: #1a1a1a; }
+
+/* 무기 슬롯 · 모드/조준경 버튼 키우기 */
+#weapons { bottom: calc(8px + env(safe-area-inset-bottom)); gap: 5px; }
+#weapons button { min-width: 52px; height: 42px; font-size: 14px; border-radius: 10px; }
+#gun-opts button { height: 32px; padding: 0 12px; font-size: 12.5px; border-radius: 16px; }
+#ammo { bottom: 60px; }
+
+/* 메뉴 화면: 글씨·버튼 크게, 스크롤은 세로만 */
+#tuning, .lb-body, .ms-info, .cs-info, .ms-list, .cs-list, .mv-side { touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+#tuning { font-size: 13.5px; width: min(400px, 58vw); }
+#tuning button { padding: 8px 12px; }
+#tuning input[type=range] { height: 30px; }
+.tn-row.bool input { width: 24px; height: 24px; }
+#lobby, #modeselect, #charselect { font-size: 13.5px; }
+#lobby button { padding: 9px 12px; min-height: 40px; }
+.lb-tabs button { flex: 1; font-weight: 800; }
+.lb-slots { grid-template-columns: repeat(3, 1fr); }
+.lb-slot { min-height: 52px; }
+.boost { color: #ffc933; font-size: .85em; }
+.ms-list button, .cs-list button { min-height: 48px; }
+.ms-row button, .ms-reset, .ms-lobby, .cs-hit { min-height: 38px; }
+#mapview button { min-height: 40px; }
+.cs-go { min-height: 46px; }
+#start-btn { min-height: 52px; }
+#install-hint { font-size: 12px; opacity: .85; margin-top: 12px; line-height: 1.5; }
+.le-row button { min-height: 38px; }
+
+/* 아주 작은 화면 (가로 640px 이하) */
+@media (max-width: 700px) {
+  .qm-grid { grid-template-columns: repeat(4, 76px); gap: 8px; }
+  .qm-grid button { height: 70px; font-size: 24px; }
+  .lb-armory { grid-template-columns: 96px 1fr; }
+  .lb-wstats { grid-column: 1 / -1; }
+  .cs-body { grid-template-columns: 100px 1fr 1fr; }
+  #weapons button { min-width: 46px; padding: 0 6px; }
+}
+
+/* 사격 모드·조준경 버튼: 탄약 위 가로 배치 (작은 화면에서 조준 버튼과 겹치지 않게) */
+#gun-opts { left: 50%; transform: translateX(-50%); bottom: 104px; flex-direction: row; }
+#voice-sub { bottom: 146px; }

@@ -617,3 +617,16 @@ button { touch-action: manipulation; }
 html, body, #game, #touch-layer, #hud, #hud *, .btn, #joy-base, #joy-knob, #layout-editor, #layout-editor * { touch-action: none; }
 #tuning, .lb-body, .ms-info, .cs-info, .ms-list, .cs-list, .mv-side, #tuning * { touch-action: pan-y; }
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+/* 아이폰 설치 안내 */
+#ios-guide { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(8,10,18,.85); padding: 12px; color: #e8ecf5; }
+#ios-guide[hidden] { display: none; }
+.ig-card { max-width: 480px; background: #161b2b; border: 1px solid #3c4560; border-radius: 16px; padding: 14px 18px; }
+.ig-card h2 { margin: 0 0 6px; font-size: 18px; color: #ffb02e; }
+.ig-card p { margin: 0 0 8px; font-size: 13.5px; line-height: 1.5; opacity: .9; }
+.ig-card ol { margin: 0 0 10px; padding-left: 20px; font-size: 14px; line-height: 1.9; }
+.ig-icon { display: inline-block; border: 1.5px solid #6cbcff; color: #6cbcff; border-radius: 4px; padding: 0 5px; font-size: 12px; }
+.ig-btns { display: flex; gap: 8px; }
+.ig-btns button { flex: 1; min-height: 44px; font: inherit; font-weight: 800; border-radius: 10px; border: 0; background: #2a3146; color: #fff; }
+.ig-btns button:first-child { background: #ffb02e; color: #1a1a1a; }
+#install-hint b { color: #ffd27a; }

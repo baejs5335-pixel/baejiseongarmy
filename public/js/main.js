@@ -734,31 +734,49 @@ quickMenu.addEventListener('click', (e) => {
     map: () => mapView.toggle(true),
     tune: () => tuning.toggle(true),
     hud: () => layout.openEditor(),
-    fullscreen: () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.()
-      .then(() => screen.orientation?.lock?.('landscape')).catch(() => {})),
+    fullscreen: () => (fsElement() ? document.exitFullscreen?.() : canFullscreen ? requestFullscreen() : ($('#ios-guide').hidden = false)),
   })[b?.dataset.q]?.();
 });
 
-// 설치 안내: 아이폰은 전체 화면 API가 없어 "홈 화면에 추가"가 유일한 전체 화면 방법
+// ── 전체 화면 ─────────────────────────────
+// 안드로이드(크롬·삼성 인터넷): 전체 화면 API 사용. 풀려도 게임 화면을 다시 탭하면 재진입
+// 아이폰: 웹페이지 전체 화면 API가 없음 → "홈 화면에 추가"로 설치해서 실행하는 것이 유일한 방법
+const root = document.documentElement;
+const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+const canFullscreen = !!(root.requestFullscreen || root.webkitRequestFullscreen);
+const standalone = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone;
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const touchDevice = matchMedia('(pointer: coarse)').matches;
+
+function requestFullscreen() {
+  if (!touchDevice || standalone || fsElement() || !canFullscreen) return;
+  const p = root.requestFullscreen ? root.requestFullscreen({ navigationUI: 'hide' }) : root.webkitRequestFullscreen();
+  Promise.resolve(p).then(() => screen.orientation?.lock?.('landscape')).catch(() => { /* 미지원 */ });
+}
+// 게임 화면을 탭할 때마다 (전체 화면이 풀려 있으면) 다시 전체 화면으로
+$('#touch-layer').addEventListener('pointerdown', requestFullscreen);
+document.querySelectorAll('#hud .btn').forEach((b) => b.addEventListener('pointerdown', requestFullscreen));
+
 {
-  const standalone = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone;
-  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const hint = $('#install-hint');
-  if (!standalone && matchMedia('(pointer: coarse)').matches) {
+  if (touchDevice && !standalone) {
     hint.hidden = false;
-    hint.textContent = ios
-      ? '📲 Safari 공유 버튼 → "홈 화면에 추가"로 설치하면 주소창 없이 전체 화면으로 플레이할 수 있어요'
-      : '📲 브라우저 메뉴 → "홈 화면에 추가"(앱 설치)로 설치하면 전체 화면·가로 모드로 바로 실행돼요';
+    hint.innerHTML = canFullscreen
+      ? '📲 화면을 탭하면 전체 화면이 됩니다. 브라우저 메뉴(⋮) → <b>홈 화면에 추가</b>로 설치하면 아이콘으로 바로 전체 화면 실행돼요.'
+      : '📲 아이폰은 브라우저에서 전체 화면이 지원되지 않아요. <b>홈 화면에 추가</b>해서 실행해 주세요.';
   }
+  // 아이폰 브라우저 첫 접속: 설치 방법 단계 안내
+  let seen = false;
+  try { seen = localStorage.getItem('ss-ios-guide') === '1'; } catch { /* 무시 */ }
+  if (isIOS && !standalone && !seen && !URL_STATE.go) $('#ios-guide').hidden = false;
+  $('#ios-guide').addEventListener('click', (e) => {
+    if (!e.target.closest('[data-close]')) return;
+    if (e.target.closest('[data-never]')) { try { localStorage.setItem('ss-ios-guide', '1'); } catch { /* 무시 */ } }
+    $('#ios-guide').hidden = true;
+  });
 }
 
 // ── 시작 화면 → 모드 선택 → 캐릭터 선택 ─────
-function requestFullscreen() {
-  if (!matchMedia('(pointer: coarse)').matches || document.fullscreenElement) return;
-  document.documentElement.requestFullscreen?.({ navigationUI: 'hide' })
-    .then(() => screen.orientation?.lock?.('landscape'))
-    .catch(() => { /* 미지원 */ });
-}
 addEventListener('pointerdown', () => sfx.unlock(), { once: true });
 if (URL_STATE.go) {
   // 모드를 고르고 넘어온 경우: 바로 캐릭터 선택

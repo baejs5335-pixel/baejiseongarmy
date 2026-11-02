@@ -22,6 +22,7 @@ import { Layout } from './layout.js';
 import { surfaceAt } from './maps.js';
 import { Progression } from './progression.js';
 import { Lobby } from './lobby.js';
+import { Cosmetics, ITEMS, profileHTML } from './cosmetics.js';
 
 const DEG = Math.PI / 180;
 const BASE_FOV = 65;   // 세로 FOV
@@ -79,6 +80,7 @@ const assist = new AimAssist();
 const voice = new Voice(sfx);
 // 육성: 강화·파츠가 적용된 내 무기 스펙 (AI는 기본 스펙 사용)
 const prog = new Progression();
+const cos = new Cosmetics(prog); // 꾸미기 (능력치 영향 없음)
 let EFF = {};
 const gun = (k) => EFF[k] || (EFF[k] = prog.effective(k));
 const minimap = new Minimap(MAP);
@@ -118,10 +120,18 @@ function refreshLoadout() {
   for (const k of WEAPON_ORDER) {
     const w = gun(k);
     if (S.ammo[k] > w.mag) S.ammo[k] = w.mag;
-    if (!w.melee) vm.setLoadout(k, w);
+    vm.setLoadout(k, w, cos.equipped('gunSkin', k));
+  }
+  vm.setHands(ITEMS.glove[cos.equipped('glove')], cos.look(CH.id).outfit, CH.color);
+  // 킬 피드·스코어보드·결과에 보일 내 정체성 (닉네임·칭호·테두리·킬마크)
+  if (player) {
+    player.name = cos.nick;
+    player.killmark = ITEMS.killmark[cos.equipped('killmark')].icon;
+    player.profile = profileHTML(cos, CH);
+    player.card = profileHTML(cos, CH, 'card');
   }
 }
-const lobby = new Lobby(prog, refreshLoadout);
+const lobby = new Lobby(prog, refreshLoadout, cos, () => CH.id);
 prog.toast = (text) => {
   const t = document.createElement('div');
   t.textContent = '🏅 ' + text;
@@ -143,7 +153,7 @@ if (isMatch) {
     world, nav, map: MAP, rules, sfx, player,
     onKill: (killer, victim, w, head, back) => {
       mhud.feed(killer, victim, w, head, back);
-      if (killer === player && victim !== player) onPlayerKill(w, head, back);
+      if (killer === player && victim !== player) onPlayerKill(w, head, back, new THREE.Vector3(victim.pos.x, victim.chestY, victim.pos.z));
       if (victim.team === 'A' && !victim.isPlayer) {
         const ally = match.combatants.find((c) => c.team === 'A' && !c.dead && !c.isPlayer);
         if (ally) voice.say('allyDown', speakerOf(ally), { cooldown: 8, radio: true });
@@ -211,7 +221,11 @@ function occluded(pos) {
 
 // 내가 처치: 보이스 + 연속 킬 아나운서
 const multi = { n: 0, t: -9 };
-function onPlayerKill(w, head, back) {
+function onPlayerKill(w, head, back, pos) {
+  // 꾸미기: 킬 연출 + 킬마크
+  if (pos) world.killFx(pos, cos.equipped('killFx'));
+  const mk = ITEMS.killmark[cos.equipped('killmark')];
+  fx.killmark(mk.icon, mk.rarity);
   multi.n = S.time - multi.t < 4 ? multi.n + 1 : 1;
   multi.t = S.time;
   if (match) {
@@ -234,13 +248,14 @@ const tuning = new Tuning(() => { input.applyConfig(); resize(); }, () => {
 
 const charSelect = new CharSelect((id) => {
   CH = CHARACTERS[id];
+  refreshLoadout();
   switchWeapon(allowed.includes(CH.weapon) ? CH.weapon : allowed[0]);
   if (match) {
     player.setChar(CH);
     if (match.state === 'idle') { match.start(); voice.say('start', ANNOUNCER, { priority: true }); }
   }
   requestFullscreen();
-});
+}, (id) => cos.look(id));
 const modeSelect = new ModeSelect(URL_STATE.mode, (mode) => {
   if (mode !== URL_STATE.mode || (match && match.state !== 'idle')) gotoMode(mode);
   else charSelect.toggle(true);
@@ -399,7 +414,7 @@ function resolveMelee() {
   if (r.killed) {
     S.kills++;
     if (match) match.onKill(player, r.victim, w, false, r.back);
-    else onPlayerKill(w, false, r.back);
+    else onPlayerKill(w, false, r.back, r.point);
   }
 }
 
@@ -426,7 +441,7 @@ function flushHits() {
   for (const s of pendingShots) {
     if (!s.hitCounted) { S.hits++; s.hitCounted = true; }
     if (s.head && !s.headCounted) { S.heads++; s.headCounted = true; }
-    if (s.kill) { S.kills++; if (!match) onPlayerKill(s.w, s.head, false); }
+    if (s.kill) { S.kills++; if (!match) onPlayerKill(s.w, s.head, false, s.point); }
     fx.hit({ dmg: s.dmg, head: s.head, kill: s.kill, point: s.point }, s.w);
     s.dmg = 0; s.head = false; s.kill = false; s.point = null;
   }
@@ -797,4 +812,4 @@ $('#start-btn').addEventListener('click', () => {
 });
 
 // 디버그용
-window.__game = { P, S, world, cfg, WEAPONS, mapView, charSelect, modeSelect, rules, sfx, voice, layout, prog, lobby, get match() { return match; }, get player() { return player; }, get CH() { return CH; } };
+window.__game = { P, S, world, cfg, WEAPONS, mapView, charSelect, modeSelect, rules, sfx, voice, layout, prog, lobby, cos, vm, get match() { return match; }, get player() { return player; }, get CH() { return CH; } };

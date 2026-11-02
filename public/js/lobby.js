@@ -1,13 +1,20 @@
 // 병영 화면: 무기고(강화·등급·파츠) / 상점(파츠·보급 상자·환전) / 일일 미션 / 업적
 import { WEAPONS, GUN_ORDER } from './weapons.js';
+import { ITEMS, CATS, PER, RARITY, profileHTML, swatchHTML } from './cosmetics.js';
+import { CHARACTERS, CHAR_ORDER } from './characters.js';
 import { GRADES, SLOTS, SLOT_ORDER, PARTS, ECON, MAX_ENH, DAILY_BONUS, LEGEND_PART_BONUS } from './progression.js';
 
 const cost = (c) => [c.gold ? `🪙${c.gold.toLocaleString()}` : '', c.gems ? `💎${c.gems}` : ''].filter(Boolean).join(' ');
 const gradeTag = (g) => `<span class="gr" style="color:${GRADES[g].color}">${GRADES[g].name}</span>`;
 
 export class Lobby {
-  constructor(prog, onChange) {
+  // charId(): 현재 캐릭터 (프로필 아바타·의상 기본 선택)
+  constructor(prog, onChange, cos, charId) {
     this.prog = prog;
+    this.cos = cos;
+    this.charId = charId;
+    this.cat = 'gunSkin';
+    this.cslot = null;
     this.onChange = onChange;
     this.el = document.getElementById('lobby');
     this.tab = 'armory';
@@ -32,11 +39,11 @@ export class Lobby {
   render() {
     const p = this.prog.p;
     const need = ECON.xpToNext(p.level);
-    const tabs = { armory: '무기고', shop: '상점', missions: '일일 미션', ach: '업적' };
+    const tabs = { armory: '무기고', style: '꾸미기', shop: '상점', missions: '일일 미션', ach: '업적' };
     const badge = this.prog.claimable();
     this.el.innerHTML = `
       <div class="lb-head">
-        <b>🎒 병영</b>
+        <button class="lb-profile" data-act="nick" title="닉네임 바꾸기">${profileHTML(this.cos, CHARACTERS[this.charId()], 'card')}<small>✏️</small></button>
         <div class="lb-lv">Lv.${p.level}<div class="lb-xp"><i style="width:${p.xp / need * 100}%"></i></div><small>${p.xp}/${need}</small></div>
         <span class="lb-cur">🪙 ${p.gold.toLocaleString()}</span><span class="lb-cur">💎 ${p.gems}</span>
         <button data-close>닫기</button>
@@ -107,6 +114,31 @@ export class Lobby {
     </div>`;
   }
 
+  // ── 꾸미기 ──────────────────────────────
+  style() {
+    const cos = this.cos, cat = this.cat, per = PER[cat];
+    const slots = per === 'weapon' ? GUN_ORDER.map((k) => [k, WEAPONS[k].name]) : per === 'char' ? CHAR_ORDER.map((k) => [k, CHARACTERS[k].name]) : [];
+    if (per && !slots.some(([k]) => k === this.cslot)) this.cslot = per === 'char' ? this.charId() : slots[0][0];
+    const eq = cos.equipped(cat, this.cslot);
+    const items = Object.entries(ITEMS[cat]).map(([id, it]) => {
+      const owned = cos.owns(cat, id), on = eq === id;
+      const btn = on ? '<em>장착 중</em>'
+        : owned ? `<button data-act="equipC" data-id="${id}">장착</button>`
+          : it.price ? `<button data-act="buyC" data-id="${id}">${cost(it.price)}</button>`
+            : `<small class="lock">🔒 ${cos.unlockText(it.unlock)}</small>`;
+      return `<div class="cs-item ${on ? 'on' : ''} ${owned ? '' : 'locked'}" style="border-color:${RARITY[it.rarity].color}">
+        ${swatchHTML(cat, id, it)}<b>${it.name}</b><small style="color:${RARITY[it.rarity].color}">${RARITY[it.rarity].name}${it.anim ? ' · 움직임' : ''}</small>${btn}</div>`;
+    }).join('');
+    return `<div class="lb-style">
+      <div class="lb-cats">${Object.entries(CATS).map(([k, v]) => `<button data-act="cat" data-cat="${k}" class="${k === cat ? 'on' : ''}">${v}</button>`).join('')}</div>
+      <div class="lb-items">
+        ${per ? `<div class="lb-chips">${slots.map(([k, n]) => `<button data-act="cslot" data-k="${k}" class="${k === this.cslot ? 'on' : ''}">${n}</button>`).join('')}</div>` : ''}
+        <div class="lb-grid">${items}</div>
+        <p class="lb-note">꾸미기는 능력치에 영향이 없습니다 · 칭호와 테두리 일부는 레벨·업적으로만 얻을 수 있어요</p>
+      </div>
+    </div>`;
+  }
+
   // ── 상점 ────────────────────────────────
   shop() {
     const p = this.prog.p;
@@ -166,6 +198,15 @@ export class Lobby {
       case 'claimD': pr.claimDaily(d.id); break;
       case 'bonus': pr.claimDailyBonus(); break;
       case 'claimA': pr.claimAch(d.id); break;
+      case 'cat': this.cat = d.cat; this.render(); break;
+      case 'cslot': this.cslot = d.k; this.render(); break;
+      case 'equipC': this.cos.equip(this.cat, d.id, this.cslot); break;
+      case 'buyC': { const r = this.cos.buy(this.cat, d.id); this.flash(r === 'ok' ? '구매 완료!' : msgs.cost); if (r !== 'ok') this.render(); break; }
+      case 'nick': {
+        const n = prompt('닉네임 (최대 10자)', this.cos.nick);
+        if (n && n.trim()) this.cos.setNick(n);
+        break;
+      }
     }
   }
 }

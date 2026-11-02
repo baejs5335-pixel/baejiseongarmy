@@ -7,6 +7,7 @@
 //  목표 생존력 ≈ 100 − (속도 − 1) × 150. 단, AR 몸통 필요 탄수 구간(4발/5발)이 깨지지 않게 체력을 반올림.
 import * as THREE from 'three';
 import { toon, addOutline } from './toon.js';
+import { patternTexture } from './cosmetics.js';
 
 const KEY = 'ss-chars-v1';
 
@@ -159,17 +160,53 @@ const LOOKS = {
   },
 };
 
+// 악세서리 (머리 중심 기준, 판정 없음)
+const ACCESSORIES = {
+  shades(g, d) {
+    g.add(mesh(new THREE.BoxGeometry(d.headR * 1.5, d.headR * 0.32, 0.05), toon(0x111111), 0, d.headY + 0.03, d.headR * 0.92));
+  },
+  headset(g, d) {
+    g.add(mesh(new THREE.TorusGeometry(d.headR * 1.08, 0.022, 6, 20, Math.PI), toon(0x2a2d36), 0, d.headY + 0.02, 0));
+    for (const sx of [-1, 1]) g.add(mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.06, 12).rotateZ(Math.PI / 2), toon(0x3d7fd6), sx * d.headR * 1.05, d.headY, 0));
+  },
+  bandana(g, d) {
+    g.add(mesh(new THREE.SphereGeometry(d.headR * 1.04, 14, 8, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.3), toon(0xd64a3d), 0, d.headY, 0));
+  },
+  catears(g, d) {
+    for (const sx of [-1, 1]) {
+      const e = mesh(new THREE.ConeGeometry(0.075, 0.16, 4), toon(0xffb0c8), sx * d.headR * 0.6, d.headY + d.headR * 1.05, 0);
+      e.rotation.z = -sx * 0.35;
+      g.add(e);
+    }
+  },
+  crown(g, d) {
+    const m = toon(0xffc933, { emissive: 0x3a2800 });
+    g.add(mesh(new THREE.CylinderGeometry(d.headR * 0.75, d.headR * 0.7, 0.08, 10, 1, true), m, 0, d.headY + d.headR * 1.1, 0));
+    for (let i = 0; i < 5; i++) {
+      const a = i / 5 * Math.PI * 2;
+      g.add(mesh(new THREE.ConeGeometry(0.035, 0.09, 4), m, Math.sin(a) * d.headR * 0.72, d.headY + d.headR * 1.1 + 0.08, Math.cos(a) * d.headR * 0.72));
+    }
+  },
+  halo(g, d) {
+    g.add(mesh(new THREE.TorusGeometry(d.headR * 0.8, 0.025, 8, 24).rotateX(Math.PI / 2), toon(0xfff2a0, { emissive: 0x8a7a20 }), 0, d.headY + d.headR * 1.6, 0));
+  },
+};
+
 // 캐릭터 모델: 보이는 부분(visual)과 피격 판정(hitBody/hitHead)을 분리해서 만듭니다
-export function buildCharacter(c) {
+// look: { outfit: 의상 아이템, accessory: 악세서리 id } (꾸미기)
+export function buildCharacter(c, look = {}) {
   const d = dims(c);
   const g = new THREE.Group();
-  const bodyMat = toon(c.color), skinMat = toon(0xffd2a6);
+  const o = look.outfit;
+  const bodyMat = o?.pattern ? toon(0xffffff, { map: patternTexture(o.pattern, o.colors) }) : toon(o?.color ?? c.color, { emissive: o?.emissive ?? 0 });
+  const skinMat = toon(0xffd2a6);
   g.add(mesh(new THREE.CapsuleGeometry(d.bodyR, d.bodyLen, 4, 12), bodyMat, 0, d.bodyTop / 2, 0, 0.03));
   g.add(mesh(new THREE.SphereGeometry(d.headR, 16, 12), skinMat, 0, d.headY, 0, 0.025));
   g.add(mesh(new THREE.BoxGeometry(d.bodyR * 1.2, d.bodyTop * 0.35, d.bodyR * 0.6), toon(0x3a3f4b), 0, d.bodyTop * 0.6, -d.bodyR * 0.85, 0.02));
   const eyeGeo = new THREE.SphereGeometry(0.035 * c.head, 8, 6), eyeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
   for (const sx of [-0.08, 0.08]) g.add(mesh(eyeGeo, eyeMat, sx * c.head, d.headY + 0.02, d.headR * 0.9));
   LOOKS[c.look](g, d, c);
+  ACCESSORIES[look.accessory]?.(g, d);
 
   const hitBody = new THREE.Mesh(new THREE.CapsuleGeometry(d.hitBodyR, d.bodyLen, 2, 8), HIT_MAT);
   hitBody.position.y = d.bodyTop / 2;

@@ -11,8 +11,10 @@ export function savedCharId() {
 }
 
 export class CharSelect {
-  constructor(onPick) {
+  // lookOf(charId) → 꾸미기 외형 (의상·악세서리)
+  constructor(onPick, lookOf) {
     this.onPick = onPick;
+    this.lookOf = lookOf;
     this.el = document.getElementById('charselect');
     this.sel = savedCharId();
     this.showHit = false;
@@ -83,7 +85,7 @@ export class CharSelect {
 
   showModel() {
     this.pivot.clear();
-    this.model = buildCharacter(CHARACTERS[this.sel]);
+    this.model = buildCharacter(CHARACTERS[this.sel], this.lookOf?.(this.sel));
     this.pivot.add(this.model.group);
     this.applyHit();
   }

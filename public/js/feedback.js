@@ -57,6 +57,19 @@ export class Feedback {
     while (host.children.length > 12) host.firstChild.remove();
   }
 
+  // 킬마크: 처치마다 가운데에 배지가 튀어나오고, 4초 안의 연속 처치는 개수만큼 나란히 쌓임
+  killmark(icon, rarity) {
+    const host = this.km ||= document.getElementById('killmark');
+    const now = performance.now();
+    this.kmStreak = now - (this.kmLast || 0) < 4000 ? Math.min(5, (this.kmStreak || 0) + 1) : 1;
+    this.kmLast = now;
+    host.innerHTML = Array.from({ length: this.kmStreak }, (_, i) =>
+      `<span class="km r${rarity}${i === this.kmStreak - 1 ? ' new' : ''}">${icon}</span>`).join('');
+    host.classList.remove('show');
+    void host.offsetWidth;
+    host.classList.add('show');
+  }
+
   restart(el, ...cls) {
     el.classList.remove('show', 'head', 'kill');
     void el.offsetWidth; // 애니메이션 재시작

@@ -86,7 +86,7 @@ export class MatchHud {
     const m = this.match;
     const rows = (team) => m.combatants.filter((c) => c.team === team)
       .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
-      .map((c) => `<tr class="${c.isPlayer ? 'me' : ''}${c.dead ? ' dead' : ''}"><td>${c.name}</td><td>${c.char?.cls || ''}</td><td>${c.kills}</td><td>${c.deaths}</td></tr>`).join('');
+      .map((c) => `<tr class="${c.isPlayer ? 'me' : ''}${c.dead ? ' dead' : ''}"><td>${c.isPlayer && c.profile ? c.profile : c.name}</td><td>${c.char?.cls || ''}</td><td>${c.kills}</td><td>${c.deaths}</td></tr>`).join('');
     this.boardEl.innerHTML = `<div class="sb-inner">
       <div class="rs-score"><span class="tA">${m.score.A}</span> : <span class="tB">${m.score.B}</span> <small>목표 ${this.rules.scoreLimit}</small></div>
       <div class="rs-tables">${['A', 'B'].map((t) => `<table><tr><th class="t${t}">${TEAM_NAME[t]}</th><th>클래스</th><th>킬</th><th>데스</th></tr>${rows(t)}</table>`).join('')}</div>
@@ -134,7 +134,8 @@ export class MatchHud {
   feed(killer, victim, w, head, back) {
     const name = (c) => `<span class="t${c.team}${c.isPlayer ? ' me' : ''}">${c.name}</span>`;
     const tag = back ? ' 🗡등' : head ? ' 💥' : '';
-    const row = el(`<div>${killer ? name(killer) : ''} <em>[${w.name}${tag}]</em> ${name(victim)}</div>`);
+    const mark = killer?.isPlayer && killer.killmark ? `<span class="fmark">${killer.killmark}</span>` : '';
+    const row = el(`<div>${mark}${killer ? name(killer) : ''} <em>[${w.name}${tag}]</em> ${name(victim)}</div>`);
     this.feedEl.prepend(row);
     while (this.feedEl.children.length > 5) this.feedEl.lastChild.remove();
     setTimeout(() => row.remove(), 6000);
@@ -145,9 +146,11 @@ export class MatchHud {
     const mine = winner === 'A' ? '승리' : winner === 'B' ? '패배' : '무승부';
     const rows = (team) => match.combatants.filter((c) => c.team === team)
       .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
-      .map((c) => `<tr class="${c.isPlayer ? 'me' : ''}"><td>${c.name}</td><td>${c.kills}</td><td>${c.deaths}</td></tr>`).join('');
+      .map((c) => `<tr class="${c.isPlayer ? 'me' : ''}"><td>${c.isPlayer && c.profile ? c.profile : c.name}</td><td>${c.kills}</td><td>${c.deaths}</td></tr>`).join('');
     const all = [...match.combatants].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
+    const me = match.combatants.find((c) => c.isPlayer);
     this.resultEl.innerHTML = `
+      ${me?.card || ''}
       <h1 class="${winner === 'A' ? 'win' : winner === 'B' ? 'lose' : ''}">${mine}</h1>
       <div class="rs-score"><span class="tA">${match.score.A}</span> : <span class="tB">${match.score.B}</span></div>
       <div class="rs-mvp">MVP · ${all[0].name} (${all[0].kills}킬)</div>
@@ -161,6 +164,7 @@ export class MatchHud {
       </div>` : ''}
       <div class="rs-btns"><button data-retry>다시 하기</button><button data-modes>모드 선택</button>${onLobby ? '<button data-lobby>🎒 병영</button>' : ''}</div>`;
     this.resultEl.hidden = false;
+    document.body.classList.add('result-open'); // 알림이 결과 제목을 가리지 않게 아래로
     this.resultEl.querySelector('[data-retry]').addEventListener('click', onRetry);
     this.resultEl.querySelector('[data-modes]').addEventListener('click', onModes);
     this.resultEl.querySelector('[data-lobby]')?.addEventListener('click', onLobby);

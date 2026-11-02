@@ -226,6 +226,123 @@ export class World {
       this.impacts.push({ s, life: 0, max: 0.25, size: 0.4 });
     }
     this.ii = 0;
+    this.buildKillFx();
+  }
+
+  // ── 킬 연출 파티클 ────────────────────────
+  buildKillFx() {
+    const shape = (draw) => {
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const g = c.getContext('2d');
+      g.fillStyle = '#fff';
+      draw(g);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    };
+    this.fxTex = {
+      dot: radialTexture([[0, 'rgba(255,255,255,1)'], [0.5, 'rgba(255,255,255,.8)'], [1, 'rgba(255,255,255,0)']]),
+      square: shape((g) => g.fillRect(14, 14, 36, 36)),
+      star: shape((g) => {
+        g.beginPath();
+        for (let i = 0; i < 10; i++) {
+          const r = i % 2 ? 12 : 30, a = i / 10 * Math.PI * 2 - Math.PI / 2;
+          g.lineTo(32 + Math.cos(a) * r, 32 + Math.sin(a) * r);
+        }
+        g.fill();
+      }),
+      heart: shape((g) => {
+        g.beginPath();
+        g.moveTo(32, 54);
+        g.bezierCurveTo(-6, 30, 14, 2, 32, 20);
+        g.bezierCurveTo(50, 2, 70, 30, 32, 54);
+        g.fill();
+      }),
+    };
+    this.parts = [];
+    for (let i = 0; i < 140; i++) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false }));
+      sp.visible = false;
+      this.scene.add(sp);
+      this.parts.push({ sp, vel: new THREE.Vector3(), life: 0, max: 1 });
+    }
+    this.pi = 0;
+    const bolt = new THREE.BoxGeometry(0.12, 1, 0.12);
+    bolt.translate(0, 0.5, 0);
+    this.bolt = new THREE.Mesh(bolt, new THREE.MeshBasicMaterial({ color: 0xcfe8ff, transparent: true, depthWrite: false }));
+    this.bolt.visible = false;
+    this.scene.add(this.bolt);
+    this.fxLight = new THREE.PointLight(0xffffff, 0, 10, 2);
+    this.scene.add(this.fxLight);
+  }
+
+  spawnPart(pos, { tex = 'dot', color = 0xffffff, vel, life = 1, size = 0.2, grow = 0, gravity = 0, drag = 0, spin = 0, additive = false }) {
+    const p = this.parts[this.pi++ % this.parts.length];
+    p.sp.material.map = this.fxTex[tex];
+    p.sp.material.color.setHex(color);
+    p.sp.material.blending = additive ? THREE.AdditiveBlending : THREE.NormalBlending;
+    p.sp.material.rotation = Math.random() * Math.PI * 2;
+    p.sp.material.needsUpdate = true;
+    p.sp.position.copy(pos);
+    p.sp.visible = true;
+    Object.assign(p, { life, max: life, size, grow, gravity, drag, spin });
+    p.vel.copy(vel);
+  }
+
+  // type: confetti | hearts | flame | stars | pixel | lightning (none = 기본 피격 이펙트만)
+  killFx(pos, type) {
+    const R = (a) => (Math.random() * 2 - 1) * a;
+    const V = (x, y, z) => new THREE.Vector3(x, y, z);
+    const flash = (color, power) => { this.fxLight.position.copy(pos); this.fxLight.color.setHex(color); this.fxLight.intensity = power; this.fxFlash = 0.18; };
+    if (type === 'confetti') {
+      const cols = [0xff5a6a, 0xffd23f, 0x4ee07a, 0x4aa8ff, 0xc06aff];
+      for (let i = 0; i < 40; i++) this.spawnPart(pos, { tex: 'square', color: cols[i % 5], vel: V(R(3), 3 + Math.random() * 3, R(3)), life: 1.5, size: 0.09, gravity: 7, drag: 1.2, spin: R(10) });
+    } else if (type === 'hearts') {
+      for (let i = 0; i < 14; i++) this.spawnPart(pos, { tex: 'heart', color: [0xff6aa8, 0xff9fc4][i % 2], vel: V(R(1.2), 1.2 + Math.random() * 1.6, R(1.2)), life: 1.4, size: 0.18, grow: 0.15 });
+    } else if (type === 'flame') {
+      flash(0xff8a2e, 8);
+      for (let i = 0; i < 30; i++) this.spawnPart(pos, { color: [0xff5a1a, 0xffa02e, 0xffe066][i % 3], vel: V(R(1.6), 2 + Math.random() * 3, R(1.6)), life: 0.7, size: 0.45, grow: -0.4, drag: 1.5, additive: true });
+    } else if (type === 'stars') {
+      flash(0xffe066, 5);
+      for (let i = 0; i < 18; i++) {
+        const a = i / 18 * Math.PI * 2;
+        this.spawnPart(pos, { tex: 'star', color: 0xffd23f, vel: V(Math.cos(a) * 4, R(2) + 1, Math.sin(a) * 4), life: 0.9, size: 0.2, drag: 3, spin: R(8), additive: true });
+      }
+    } else if (type === 'pixel') {
+      for (let i = 0; i < 40; i++) {
+        const p = pos.clone().add(V(R(0.35), R(0.7), R(0.35)));
+        this.spawnPart(p, { tex: 'square', color: [0x39ff6a, 0x39e0ff, 0x1a8a4a][i % 3], vel: V(R(0.8), 0.8 + Math.random() * 1.5, R(0.8)), life: 1.2, size: 0.1, grow: -0.08 });
+      }
+    } else if (type === 'lightning') {
+      flash(0x9fd0ff, 14);
+      this.bolt.position.set(pos.x, 0, pos.z);
+      this.bolt.scale.set(1, 18, 1);
+      this.bolt.visible = true;
+      this.boltT = 0.25;
+      for (let i = 0; i < 18; i++) this.spawnPart(pos, { color: 0x9fd0ff, vel: V(R(4), Math.random() * 4, R(4)), life: 0.5, size: 0.14, drag: 2, gravity: 6, additive: true });
+    }
+  }
+
+  updateKillFx(dt) {
+    for (const p of this.parts) {
+      if (!p.sp.visible) continue;
+      p.life -= dt;
+      if (p.life <= 0) { p.sp.visible = false; continue; }
+      p.vel.y -= p.gravity * dt;
+      p.vel.multiplyScalar(Math.max(0, 1 - p.drag * dt));
+      p.sp.position.addScaledVector(p.vel, dt);
+      const k = 1 - p.life / p.max;
+      p.sp.scale.setScalar(Math.max(0.01, p.size + p.grow * k));
+      p.sp.material.rotation += p.spin * dt;
+      p.sp.material.opacity = Math.min(1, p.life / p.max * 2);
+    }
+    if (this.fxFlash > 0) { this.fxFlash -= dt; this.fxLight.intensity *= 0.85; if (this.fxFlash <= 0) this.fxLight.intensity = 0; }
+    if (this.boltT > 0) {
+      this.boltT -= dt;
+      this.bolt.material.opacity = Math.max(0, this.boltT / 0.25) * (0.6 + Math.random() * 0.4);
+      if (this.boltT <= 0) this.bolt.visible = false;
+    }
   }
 
   takeStreak() {
@@ -363,6 +480,7 @@ export class World {
 
   update(dt, cam, onHit) {
     for (const b of this.bots) b.update(dt, cam);
+    this.updateKillFx(dt);
     this.updateBullets(dt, onHit);
     for (const s of this.streaks) {
       if (s.busy || s.fade <= 0) continue;

@@ -1,0 +1,195 @@
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; height: 100%; overflow: hidden; background: #000;
+  font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  overscroll-behavior: none;
+}
+#game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+#touch-layer { position: fixed; inset: 0; }
+#hud { position: fixed; inset: 0; pointer-events: none; color: #fff; }
+#hud button { pointer-events: auto; font: inherit; }
+
+/* ── 십자선 ───────────────────────── */
+#crosshair { position: fixed; left: 50%; top: 50%; --gap: 8px; --len: 9px; }
+#crosshair .ch, #crosshair .dot {
+  position: absolute; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.55); border-radius: 1px;
+  transition: background .08s;
+}
+#crosshair .t { width: 2px; height: var(--len); left: -1px; top: calc(-1 * (var(--gap) + var(--len))); }
+#crosshair .b { width: 2px; height: var(--len); left: -1px; top: var(--gap); }
+#crosshair .l { height: 2px; width: var(--len); top: -1px; left: calc(-1 * (var(--gap) + var(--len))); }
+#crosshair .r { height: 2px; width: var(--len); top: -1px; left: var(--gap); }
+#crosshair .dot { width: 3px; height: 3px; left: -1.5px; top: -1.5px; border-radius: 50%; }
+#crosshair.on .ch, #crosshair.on .dot { background: #ff4a3d; }
+#crosshair.hide { display: none; }
+
+/* ── 히트마커 ─────────────────────── */
+#hitmarker { position: fixed; left: 50%; top: 50%; opacity: 0; }
+#hitmarker i {
+  position: absolute; width: 2.5px; height: 10px; left: -1.25px; top: -5px;
+  background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.5);
+}
+#hitmarker i:nth-child(1) { transform: rotate(45deg) translateY(-13px); }
+#hitmarker i:nth-child(2) { transform: rotate(135deg) translateY(-13px); }
+#hitmarker i:nth-child(3) { transform: rotate(225deg) translateY(-13px); }
+#hitmarker i:nth-child(4) { transform: rotate(315deg) translateY(-13px); }
+#hitmarker.head i { background: #ffd23f; height: 12px; }
+#hitmarker.kill i { background: #ff3b3b; height: 15px; width: 3px; }
+#hitmarker.show { animation: hm var(--hm-time, .3s) ease-out; }
+@keyframes hm {
+  0% { opacity: 1; transform: scale(1.6); }
+  25% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+/* ── 스코프 ───────────────────────── */
+#scope {
+  position: fixed; inset: 0; display: none;
+  background: radial-gradient(circle at center, transparent 0, transparent 38vh, rgba(0,0,0,.92) calc(38vh + 2px), #000 70vh);
+}
+#scope::before, #scope::after { content: ""; position: absolute; background: rgba(0,0,0,.85); }
+#scope::before { left: 0; right: 0; top: 50%; height: 1.5px; }
+#scope::after { top: 0; bottom: 0; left: 50%; width: 1.5px; }
+#scope.on { display: block; }
+
+/* ── 조준 보정 디버그 링 ─────────── */
+#assist-ring {
+  position: fixed; border: 2px dashed rgba(80,220,255,.8); border-radius: 50%;
+  transform: translate(-50%,-50%); display: none;
+}
+
+/* ── 데미지 숫자 / 콜아웃 ─────────── */
+#dmg-layer { position: fixed; inset: 0; }
+.dmg {
+  position: absolute; font-weight: 900; font-size: 18px; color: #fff;
+  -webkit-text-stroke: 1px rgba(0,0,0,.65); text-shadow: 0 2px 0 rgba(0,0,0,.35);
+  transform: translate(-50%,-50%); white-space: nowrap; will-change: transform, opacity;
+}
+.dmg.head { color: #ffd23f; font-size: 24px; }
+#callout {
+  position: fixed; left: 50%; top: 30%; transform: translateX(-50%);
+  font-size: 30px; font-weight: 900; letter-spacing: 1px; opacity: 0;
+  -webkit-text-stroke: 1.5px rgba(0,0,0,.7); text-shadow: 0 3px 0 rgba(0,0,0,.35);
+}
+#callout.head { color: #ffd23f; }
+#callout.show { animation: callout .9s ease-out; }
+@keyframes callout {
+  0% { opacity: 0; transform: translateX(-50%) scale(1.8); }
+  15% { opacity: 1; transform: translateX(-50%) scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+}
+
+/* ── 조이스틱 ─────────────────────── */
+#joy-base {
+  position: fixed; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%;
+  background: rgba(255,255,255,.08); border: 2px solid rgba(255,255,255,.35); opacity: .45;
+  transition: opacity .12s;
+}
+#joy-base.active { opacity: 1; transition: none; }
+#joy-knob {
+  position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px;
+  border-radius: 50%; background: rgba(255,255,255,.75); box-shadow: 0 2px 8px rgba(0,0,0,.35);
+}
+
+/* ── 버튼 ─────────────────────────── */
+.btn {
+  position: fixed; border-radius: 50%; border: 3px solid rgba(255,255,255,.75);
+  color: #fff; font-weight: 800; display: grid; place-items: center;
+  background: rgba(20,24,36,.35); touch-action: none;
+}
+.btn.pressed { transform: scale(.92); background: rgba(255,255,255,.3); }
+#btn-fire {
+  right: calc(56px + env(safe-area-inset-right)); bottom: 64px; width: 96px; height: 96px;
+  background: rgba(255,90,60,.45); font-size: 16px;
+}
+#btn-fire-left {
+  left: calc(36px + env(safe-area-inset-left)); top: 26%; width: 66px; height: 66px;
+  background: rgba(255,90,60,.4); font-size: 13px;
+}
+#btn-fire-left.off { display: none; }
+#btn-ads { right: calc(176px + env(safe-area-inset-right)); bottom: 44px; width: 64px; height: 64px; font-size: 14px; }
+#btn-ads.on { background: rgba(80,200,255,.5); }
+#btn-reload { right: calc(40px + env(safe-area-inset-right)); bottom: 182px; width: 52px; height: 52px; font-size: 16px; }
+
+#weapons {
+  position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; gap: 6px;
+}
+#weapons button {
+  min-width: 54px; height: 36px; padding: 0 10px; border-radius: 8px; border: 2px solid rgba(255,255,255,.4);
+  background: rgba(20,24,36,.5); color: #fff; font-weight: 800; font-size: 13px;
+}
+#weapons button.on { background: #ffb02e; color: #1a1a1a; border-color: #fff; }
+
+#ammo {
+  position: fixed; left: 50%; bottom: 58px; transform: translateX(-50%); text-align: center;
+  font-weight: 900; text-shadow: 0 2px 0 rgba(0,0,0,.45);
+}
+#weapon-name { font-size: 12px; opacity: .85; }
+#ammo-cur { font-size: 26px; }
+#ammo-cur.low { color: #ff5a4a; }
+#ammo-max { font-size: 14px; opacity: .75; }
+#reload-bar { width: 90px; height: 5px; margin: 3px auto 0; background: rgba(0,0,0,.4); border-radius: 3px; overflow: hidden; visibility: hidden; }
+#reload-bar.on { visibility: visible; }
+#reload-bar i { display: block; height: 100%; width: 0; background: #ffd23f; }
+
+#stats {
+  position: fixed; left: calc(10px + env(safe-area-inset-left)); top: 8px;
+  font-size: 11px; line-height: 1.5; background: rgba(0,0,0,.35); padding: 4px 8px; border-radius: 6px;
+  white-space: pre;
+}
+#btn-tune {
+  position: fixed; right: calc(10px + env(safe-area-inset-right)); top: 8px; height: 34px; padding: 0 12px;
+  border-radius: 8px; border: 2px solid rgba(255,255,255,.5); background: rgba(20,24,36,.6); color: #fff; font-weight: 700;
+}
+#btn-tune.on { background: #ffb02e; color: #1a1a1a; }
+
+/* ── 튜닝 패널 ───────────────────── */
+#tuning {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(360px, 52vw); z-index: 20;
+  background: rgba(14,17,27,.94); color: #e8ecf5; font-size: 12.5px; overflow-y: auto;
+  padding: 10px 14px calc(16px + env(safe-area-inset-bottom)); touch-action: pan-y;
+  border-left: 1px solid rgba(255,255,255,.12);
+}
+#tuning[hidden] { display: none; }
+.tn-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.tn-head b { font-size: 15px; }
+#tuning button {
+  font: inherit; color: #fff; background: #2a3146; border: 1px solid #3c4560; border-radius: 6px; padding: 5px 9px;
+}
+#tuning button:active { background: #3c4560; }
+.tn-presets { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 8px; }
+.tn-presets button.on { background: #ffb02e; color: #1a1a1a; border-color: #ffb02e; }
+#tuning h3 { font-size: 12px; color: #ffb02e; margin: 14px 0 6px; letter-spacing: .5px; }
+.tn-row { display: grid; grid-template-columns: 1fr 58px; align-items: center; gap: 2px 8px; margin: 7px 0; }
+.tn-row label { font-weight: 600; }
+.tn-row .val { text-align: right; font-variant-numeric: tabular-nums; color: #9fd8ff; }
+.tn-row input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: #ffb02e; height: 22px; margin: 0; }
+.tn-row .hint { grid-column: 1 / -1; font-size: 11px; color: #8a93a8; margin-top: -2px; }
+.tn-row.bool { grid-template-columns: 1fr auto; }
+.tn-row.bool input { width: 20px; height: 20px; accent-color: #ffb02e; }
+.tn-foot { display: flex; gap: 6px; margin-top: 16px; }
+.tn-foot textarea { width: 100%; height: 90px; margin-top: 6px; background: #0b0d14; color: #9fd8ff; border: 1px solid #3c4560; font-size: 11px; }
+
+/* ── 시작 / 회전 안내 ────────────── */
+#start {
+  position: fixed; inset: 0; z-index: 30; display: grid; place-items: center;
+  background: radial-gradient(circle at 50% 30%, rgba(40,60,110,.85), rgba(8,10,18,.95));
+  color: #fff; padding: 16px;
+}
+#start.hidden { display: none; }
+#start .card { max-width: 520px; text-align: center; }
+#start h1 { margin: 0; font-size: 34px; font-weight: 900; letter-spacing: 2px; color: #ffb02e; -webkit-text-stroke: 1px #000; }
+#start .sub { margin: 4px 0 12px; opacity: .85; }
+#start ul { text-align: left; display: inline-block; margin: 0 0 8px; padding-left: 18px; line-height: 1.7; font-size: 14px; }
+#start .pc { font-size: 11px; opacity: .6; margin: 4px 0 14px; }
+#start-btn {
+  font: inherit; font-size: 18px; font-weight: 900; padding: 12px 34px; border-radius: 999px; border: 0;
+  background: #ffb02e; color: #1a1a1a; box-shadow: 0 4px 0 #b36f00;
+}
+#rotate {
+  position: fixed; inset: 0; z-index: 40; display: none; place-items: center;
+  background: #0b0d14; color: #fff; font-size: 20px; font-weight: 800;
+}
+@media (orientation: portrait) and (pointer: coarse) { #rotate { display: grid; } }

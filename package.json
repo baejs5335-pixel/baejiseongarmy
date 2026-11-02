@@ -1,0 +1,9 @@
+{
+  "name": "special-soldier",
+  "version": "0.1.0",
+  "private": true,
+  "description": "스페셜 솔져 - 1단계 조작감/타격감 프로토타입",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

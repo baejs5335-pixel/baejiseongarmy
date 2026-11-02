@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>스페셜 솔져 · 조작감 테스트</title>
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="touch-layer"></div>
+
+<div id="hud">
+  <div id="scope"></div>
+  <div id="crosshair"><i class="ch t"></i><i class="ch b"></i><i class="ch l"></i><i class="ch r"></i><i class="dot"></i></div>
+  <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+  <div id="assist-ring"></div>
+  <div id="dmg-layer"></div>
+  <div id="callout"></div>
+
+  <div id="joy-base"><div id="joy-knob"></div></div>
+
+  <div id="stats"></div>
+  <div id="ammo">
+    <div id="weapon-name"></div>
+    <div><span id="ammo-cur">30</span><span id="ammo-max">/30</span></div>
+    <div id="reload-bar"><i></i></div>
+  </div>
+  <div id="weapons">
+    <button data-weapon="AR">AR</button>
+    <button data-weapon="SR">SR</button>
+    <button data-weapon="SG">SG</button>
+    <button data-weapon="HG">권총</button>
+  </div>
+
+  <button class="btn" id="btn-fire" data-action="fire"><span>발사</span></button>
+  <button class="btn" id="btn-fire-left" data-action="fire"><span>발사</span></button>
+  <button class="btn" id="btn-ads"><span>조준</span></button>
+  <button class="btn" id="btn-reload"><span>R</span></button>
+  <button id="btn-tune">⚙ 튜닝</button>
+</div>
+
+<div id="tuning" hidden></div>
+
+<div id="start">
+  <div class="card">
+    <h1>SPECIAL SOLDIER</h1>
+    <p class="sub">1단계 · 조작감 &amp; 타격감 테스트</p>
+    <ul>
+      <li><b>왼쪽 화면</b> 드래그 → 이동 패드</li>
+      <li><b>오른쪽 화면</b> 드래그 → 시점 회전</li>
+      <li><b>발사 버튼</b>을 누른 채 드래그 → 쏘면서 조준</li>
+      <li><b>⚙ 튜닝</b>에서 감도·조준 보정·타격감 실시간 조절</li>
+    </ul>
+    <p class="pc">PC: WASD 이동 · 마우스 드래그 시점 · Space 발사 · Q 조준 · R 재장전 · 1~4 무기 · L 마우스 고정</p>
+    <button id="start-btn">탭하여 시작</button>
+  </div>
+</div>
+<div id="rotate">📱↻ 가로 모드로 돌려주세요</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

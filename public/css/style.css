@@ -43,15 +43,19 @@ html, body {
   100% { opacity: 0; transform: scale(1); }
 }
 
-/* ── 스코프 ───────────────────────── */
-#scope {
-  position: fixed; inset: 0; display: none;
-  background: radial-gradient(circle at center, transparent 0, transparent 38vh, rgba(0,0,0,.92) calc(38vh + 2px), #000 70vh);
-}
-#scope::before, #scope::after { content: ""; position: absolute; background: rgba(0,0,0,.85); }
-#scope::before { left: 0; right: 0; top: 50%; height: 1.5px; }
-#scope::after { top: 0; bottom: 0; left: 50%; width: 1.5px; }
+/* ── 조준경 오버레이 ───────────────── */
+#scope { position: fixed; inset: 0; display: none; --r: 40vh; }
 #scope.on { display: block; }
+#scope[data-type=x2], #scope[data-type=x4], #scope[data-type=x8] {
+  background: radial-gradient(circle at center, transparent 0, transparent var(--r), rgba(0,0,0,.94) calc(var(--r) + 3px), #000 75vh);
+}
+#scope[data-type=x2] { --r: 44vh; }
+#scope[data-type=x4] { --r: 41vh; }
+#scope[data-type=x8] { --r: 39vh; }
+#scope .ret { position: absolute; left: 50%; top: 50%; width: 200px; height: 200px; margin: -100px 0 0 -100px; }
+#scope[data-type=x4] .ret, #scope[data-type=x8] .ret { width: 78vh; height: 78vh; margin: -39vh 0 0 -39vh; }
+#scope .ret svg { width: 100%; height: 100%; display: block; }
+#scope[data-type=reddot] .ret, #scope[data-type=x2] .ret { filter: drop-shadow(0 0 3px rgba(255,40,40,.8)); }
 
 /* ── 조준 보정 디버그 링 ─────────── */
 #assist-ring {
@@ -112,12 +116,25 @@ html, body {
 #btn-ads { right: calc(176px + env(safe-area-inset-right)); bottom: 44px; width: 64px; height: 64px; font-size: 14px; }
 #btn-ads.on { background: rgba(80,200,255,.5); }
 #btn-reload { right: calc(40px + env(safe-area-inset-right)); bottom: 182px; width: 52px; height: 52px; font-size: 16px; }
+#btn-crouch { right: calc(170px + env(safe-area-inset-right)); bottom: 122px; width: 56px; height: 56px; font-size: 13px; }
+#btn-crouch.on { background: rgba(120,220,120,.5); }
+#gun-opts { position: fixed; left: calc(50% + 72px); bottom: 58px; display: flex; flex-direction: column; gap: 5px; }
+#gun-opts button {
+  height: 26px; padding: 0 10px; border-radius: 13px; border: 2px solid rgba(255,255,255,.45);
+  background: rgba(20,24,36,.55); color: #fff; font-weight: 800; font-size: 11.5px; white-space: nowrap;
+}
+#btn-mode.single-only { opacity: .5; }
+#btn-map {
+  position: fixed; right: calc(104px + env(safe-area-inset-right)); top: 8px; height: 34px; padding: 0 12px;
+  border-radius: 8px; border: 2px solid rgba(255,255,255,.5); background: rgba(20,24,36,.6); color: #fff; font-weight: 700;
+}
+#btn-map.on { background: #ffb02e; color: #1a1a1a; }
 
 #weapons {
   position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; gap: 6px;
 }
 #weapons button {
-  min-width: 54px; height: 36px; padding: 0 10px; border-radius: 8px; border: 2px solid rgba(255,255,255,.4);
+  min-width: 50px; height: 36px; padding: 0 8px; border-radius: 8px; border: 2px solid rgba(255,255,255,.4);
   background: rgba(20,24,36,.5); color: #fff; font-weight: 800; font-size: 13px;
 }
 #weapons button.on { background: #ffb02e; color: #1a1a1a; border-color: #fff; }
@@ -193,3 +210,39 @@ html, body {
   background: #0b0d14; color: #fff; font-size: 20px; font-weight: 800;
 }
 @media (orientation: portrait) and (pointer: coarse) { #rotate { display: grid; } }
+
+/* ── 튜닝 탭 / 무기 밸런스 ─────────── */
+.tn-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+.tn-tabs button { flex: 1; }
+.tn-tabs button.on { background: #ffb02e !important; color: #1a1a1a !important; border-color: #ffb02e !important; }
+.tn-wmeta { color: #9fd8ff; font-size: 12px; }
+#tuning table { width: 100%; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+#tuning th, #tuning td { padding: 3px 4px; text-align: right; border-bottom: 1px solid rgba(255,255,255,.08); }
+#tuning th:first-child, #tuning td:first-child { text-align: left; }
+#tuning th { color: #8a93a8; font-weight: 600; }
+.tn-ttk .hint { font-size: 11px; color: #8a93a8; margin-top: 4px; }
+
+/* ── 맵 분석 ───────────────────────── */
+#mapview { position: fixed; inset: 0; z-index: 25; background: #0e1220; color: #e8ecf5; font-size: 12px; }
+#mapview[hidden] { display: none; }
+#mapview canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+.mv-bar {
+  position: absolute; left: 10px; right: 10px; top: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
+.mv-bar b { font-size: 14px; margin-right: 6px; }
+.mv-group { display: inline-flex; gap: 4px; }
+#mapview button {
+  font: inherit; font-weight: 700; color: #fff; background: #2a3146; border: 1px solid #3c4560; border-radius: 6px; padding: 6px 10px;
+}
+#mapview button.on { background: #ffb02e; color: #1a1a1a; border-color: #ffb02e; }
+#mapview [data-close] { margin-left: auto; }
+.mv-side {
+  position: absolute; right: 10px; top: 52px; width: min(250px, 30vw); max-height: calc(100% - 90px); overflow: auto;
+  background: rgba(14,17,27,.85); border: 1px solid rgba(255,255,255,.1); border-radius: 8px; padding: 8px 10px; line-height: 1.6;
+}
+.mv-side table { width: 100%; border-collapse: collapse; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.mv-side th, .mv-side td { padding: 2px 3px; text-align: right; border-bottom: 1px solid rgba(255,255,255,.08); }
+.mv-side th:first-child, .mv-side td:first-child { text-align: left; }
+.mv-side .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin-right: 6px; border: 1px solid #000; }
+.mv-side .ramp { display: inline-block; width: 100%; height: 10px; border-radius: 3px; background: linear-gradient(90deg, hsl(220,85%,52%), hsl(110,85%,52%), hsl(55,85%,52%), hsl(0,85%,52%)); }
+.mv-hint { position: absolute; left: 12px; bottom: 8px; opacity: .6; }

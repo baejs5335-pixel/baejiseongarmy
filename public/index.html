@@ -14,7 +14,7 @@
 <div id="touch-layer"></div>
 
 <div id="hud">
-  <div id="scope"></div>
+  <div id="scope"><div class="ret"></div></div>
   <div id="crosshair"><i class="ch t"></i><i class="ch b"></i><i class="ch l"></i><i class="ch r"></i><i class="dot"></i></div>
   <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
   <div id="assist-ring"></div>
@@ -26,11 +26,16 @@
   <div id="stats"></div>
   <div id="ammo">
     <div id="weapon-name"></div>
-    <div><span id="ammo-cur">30</span><span id="ammo-max">/30</span></div>
+    <div><span id="ammo-cur">30</span><span id="ammo-max"> / 150</span></div>
     <div id="reload-bar"><i></i></div>
+  </div>
+  <div id="gun-opts">
+    <button id="btn-mode" data-press="mode">연사</button>
+    <button id="btn-scope" data-press="scope">레드닷</button>
   </div>
   <div id="weapons">
     <button data-weapon="AR">AR</button>
+    <button data-weapon="SMG">SMG</button>
     <button data-weapon="SR">SR</button>
     <button data-weapon="SG">SG</button>
     <button data-weapon="HG">권총</button>
@@ -38,24 +43,28 @@
 
   <button class="btn" id="btn-fire" data-action="fire"><span>발사</span></button>
   <button class="btn" id="btn-fire-left" data-action="fire"><span>발사</span></button>
-  <button class="btn" id="btn-ads"><span>조준</span></button>
-  <button class="btn" id="btn-reload"><span>R</span></button>
+  <button class="btn" id="btn-ads" data-press="ads"><span>조준</span></button>
+  <button class="btn" id="btn-crouch" data-press="crouch"><span>앉기</span></button>
+  <button class="btn" id="btn-reload" data-press="reload"><span>R</span></button>
+  <button id="btn-map" data-press="map">🗺 맵</button>
   <button id="btn-tune">⚙ 튜닝</button>
 </div>
 
 <div id="tuning" hidden></div>
+<div id="mapview" hidden></div>
 
 <div id="start">
   <div class="card">
     <h1>SPECIAL SOLDIER</h1>
-    <p class="sub">1단계 · 조작감 &amp; 타격감 테스트</p>
+    <p class="sub">조작감 · 총기 · 맵 테스트 빌드</p>
     <ul>
-      <li><b>왼쪽 화면</b> 드래그 → 이동 패드</li>
-      <li><b>오른쪽 화면</b> 드래그 → 시점 회전</li>
+      <li><b>왼쪽 화면</b> 드래그 → 이동 패드 / <b>오른쪽 화면</b> 드래그 → 시점 회전</li>
       <li><b>발사 버튼</b>을 누른 채 드래그 → 쏘면서 조준</li>
-      <li><b>⚙ 튜닝</b>에서 감도·조준 보정·타격감 실시간 조절</li>
+      <li><b>연사/조준경</b> 버튼으로 사격 모드·배율 변경, <b>앉기</b>로 낮은 엄폐물 뒤에 숨기</li>
+      <li><b>🗺 맵</b>에서 시야선·노출도 분석, 맵을 탭하면 순간이동</li>
+      <li><b>⚙ 튜닝</b>에서 감도·타격감, 무기 스펙과 TTK 실시간 조절</li>
     </ul>
-    <p class="pc">PC: WASD 이동 · 마우스 드래그 시점 · Space 발사 · Q 조준 · R 재장전 · 1~4 무기 · L 마우스 고정</p>
+    <p class="pc">PC: WASD 이동 · 마우스 드래그 시점 · Space 발사 · Q 조준 · C 앉기 · R 재장전 · B 사격 모드 · T 조준경 · M 맵 · 1~5 무기 · L 마우스 고정</p>
     <button id="start-btn">탭하여 시작</button>
   </div>
 </div>

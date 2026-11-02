@@ -6,6 +6,23 @@ const $ = (s) => document.querySelector(s);
 const DEG = Math.PI / 180;
 const v = new THREE.Vector3();
 
+// 조준경 레티클 (SVG, 중심 0,0)
+const svg = (body) => `<svg viewBox="-100 -100 200 200" width="200" height="200">${body}</svg>`;
+const milDots = [-56, -42, -28, -14, 14, 28, 42, 56]
+  .map((d) => `<circle cx="${d}" cy="0" r="1.6"/><circle cx="0" cy="${d}" r="1.6"/>`).join('');
+const RETICLES = {
+  iron: svg('<circle r="1.6" fill="#fff" stroke="#000" stroke-width=".8"/>'),
+  reddot: svg('<circle r="2.8" fill="#ff2a2a"/><circle r="5" fill="none" stroke="rgba(255,60,60,.35)" stroke-width="2"/>'),
+  x2: svg('<circle r="2.2" fill="#ff2a2a"/><circle r="17" fill="none" stroke="#ff2a2a" stroke-width="1.4"/>'),
+  x4: svg(`<g stroke="#111" stroke-width="1.6" fill="none">
+      <path d="M-11 13 L0 0 L11 13" stroke="#ff3030" stroke-width="2"/>
+      <line x1="-100" y1="0" x2="-24" y2="0"/><line x1="24" y1="0" x2="100" y2="0"/>
+      <line x1="0" y1="24" x2="0" y2="100"/>
+      <line x1="-8" y1="32" x2="8" y2="32"/><line x1="-6" y1="46" x2="6" y2="46"/><line x1="-4" y1="60" x2="4" y2="60"/></g>`),
+  x8: svg(`<g stroke="#111" stroke-width="1.2"><line x1="-100" y1="0" x2="-4" y2="0"/><line x1="4" y1="0" x2="100" y2="0"/>
+      <line x1="0" y1="-100" x2="0" y2="-4"/><line x1="0" y1="4" x2="0" y2="100"/></g><g fill="#111">${milDots}</g>`),
+};
+
 export class Feedback {
   constructor(camera, sfx) {
     this.cam = camera;
@@ -55,14 +72,22 @@ export class Feedback {
     }
   }
 
+  setOverlay(type) {
+    if (type === this.overlayType) return;
+    this.overlayType = type;
+    this.scope.dataset.type = type || '';
+    this.scope.classList.toggle('on', !!type);
+    this.scope.querySelector('.ret').innerHTML = type ? RETICLES[type] : '';
+  }
+
   update(dt, s) {
     // 십자선: 실제 탄퍼짐 각도를 화면 픽셀로 변환
     const half = Math.tan(this.cam.fov * DEG / 2);
     const gap = Math.tan(s.spreadDeg * DEG) / half * (innerHeight / 2);
     this.cross.style.setProperty('--gap', Math.max(5, gap + 3).toFixed(1) + 'px');
     this.cross.classList.toggle('on', s.onTarget);
-    this.cross.classList.toggle('hide', s.scoped);
-    this.scope.classList.toggle('on', s.scoped);
+    this.cross.classList.toggle('hide', s.hideCross);
+    this.setOverlay(s.overlay);
 
     for (let i = this.nums.length - 1; i >= 0; i--) {
       const n = this.nums[i];

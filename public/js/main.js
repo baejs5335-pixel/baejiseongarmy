@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { config as cfg } from './config.js';
-import { WEAPONS, WEAPON_ORDER } from './weapons.js';
+import { WEAPONS, WEAPON_ORDER, SCOPES, MODE_NAMES, damageAt } from './weapons.js';
+import { MAP } from './maps.js';
 import { Input } from './input.js';
 import { World } from './world.js';
 import { Feedback } from './feedback.js';
@@ -8,10 +9,12 @@ import { Sfx } from './audio.js';
 import { AimAssist } from './aimassist.js';
 import { Viewmodel } from './viewmodel.js';
 import { Tuning } from './tuning.js';
+import { MapView } from './mapview.js';
 
 const DEG = Math.PI / 180;
 const BASE_FOV = 65;   // 세로 FOV
-const EYE = 1.6;
+const STAND_EYE = 1.6;
+const CROUCH_EYE = 0.95;
 const PLAYER_R = 0.35;
 
 const $ = (s) => document.querySelector(s);
@@ -20,6 +23,8 @@ const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 const smooth = (t) => t * t * (3 - 2 * t);
 // 부드러운 의사 노이즈 (-1..1) — 화면 흔들림용
 const noise = (t, s) => Math.sin(t + s * 13.1) * 0.5 + Math.sin(t * 2.3 + s * 7.7) * 0.3 + Math.sin(t * 4.1 + s * 3.3) * 0.2;
+// 배율 → 세로 FOV
+const zoomFov = (zoom) => 2 * Math.atan(Math.tan(BASE_FOV * DEG / 2) / zoom) / DEG;
 
 // ── 렌더러 / 씬 ───────────────────────────
 const renderer = new THREE.WebGLRenderer({ canvas: $('#game'), antialias: true, powerPreference: 'high-performance' });
@@ -29,13 +34,39 @@ const camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.03, 250);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
 
-const world = new World(scene);
+const world = new World(scene, MAP);
 const sfx = new Sfx();
 const fx = new Feedback(camera, sfx);
 const vm = new Viewmodel(camera);
 const input = new Input();
 const assist = new AimAssist();
-new Tuning(() => input.applyConfig());
+
+// ── 상태 ──────────────────────────────────
+const spawn = MAP.spawns.A[2];
+const P = { pos: new THREE.Vector3(spawn.x, 0, spawn.z), vel: new THREE.Vector3(), yaw: spawn.yaw, pitch: 0, recoilDebt: 0, bob: 0 };
+const S = {
+  wKey: 'AR', ammo: {}, reserve: {}, modeIdx: {}, scopeIdx: {},
+  reloadT: 0, reloadDur: 0, cooldown: 0, fireBuffer: 0, lastShot: -9, shotIdx: 0, burstLeft: 0,
+  ads: false, adsT: 0, crouch: false, crouchT: 0,
+  bloom: 0, trauma: 0, fovPunch: 0, pendX: 0, pendY: 0, time: 0, eyeH: STAND_EYE,
+  shots: 0, hits: 0, heads: 0, kills: 0, onTarget: false,
+};
+for (const k of WEAPON_ORDER) {
+  const w = WEAPONS[k];
+  S.ammo[k] = w.mag;
+  S.reserve[k] = w.reserve;
+  S.modeIdx[k] = 0;
+  S.scopeIdx[k] = w.scopes.indexOf(w.defaultScope);
+}
+
+const curScopeKey = () => WEAPONS[S.wKey].scopes[S.scopeIdx[S.wKey]];
+const curMode = () => WEAPONS[S.wKey].modes[S.modeIdx[S.wKey]];
+
+const mapView = new MapView(MAP, world, (x, z) => { P.pos.set(x, 0, z); P.vel.set(0, 0, 0); });
+new Tuning(() => input.applyConfig(), () => {
+  // 무기 밸런스 패널에서 탄창 크기를 줄였을 때 현재 탄약 정리
+  for (const k of WEAPON_ORDER) S.ammo[k] = Math.min(S.ammo[k], WEAPONS[k].mag);
+});
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
@@ -46,44 +77,53 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
-// ── 상태 ──────────────────────────────────
-const P = { pos: new THREE.Vector3(0, 0, 14), vel: new THREE.Vector3(), yaw: 0, pitch: 0, recoilDebt: 0, bob: 0 };
-const S = {
-  wKey: 'AR', ammo: {}, reloadT: 0, cooldown: 0, fireBuffer: 0, lastShot: -1,
-  ads: false, adsT: 0, bloom: 0, trauma: 0, fovPunch: 0, pendX: 0, pendY: 0, time: 0,
-  shots: 0, hits: 0, heads: 0, kills: 0, onTarget: false,
-};
-for (const k of WEAPON_ORDER) S.ammo[k] = WEAPONS[k].mag;
-
 const eye = new THREE.Vector3();
 const aimQ = new THREE.Quaternion();
 const aimE = new THREE.Euler(0, 0, 0, 'YXZ');
 const tmpDir = new THREE.Vector3();
 const muzzle = new THREE.Vector3();
-const endPt = new THREE.Vector3();
+const pelletQ = new THREE.Quaternion();
+const fwdZ = new THREE.Vector3(0, 0, -1);
 
 function switchWeapon(k) {
   if (k === S.wKey && vm.cur) return;
   S.wKey = k;
   S.reloadT = 0;
+  S.burstLeft = 0;
   S.cooldown = 0.3;       // 교체(드로우) 시간
   S.ads = false;
   S.bloom = 0;
-  vm.setWeapon(k);
+  S.shotIdx = 0;
+  vm.setWeapon(k, curScopeKey());
   document.querySelectorAll('[data-weapon]').forEach((b) => b.classList.toggle('on', b.dataset.weapon === k));
 }
 
 function startReload() {
   const w = WEAPONS[S.wKey];
-  if (S.reloadT > 0 || S.ammo[S.wKey] === w.mag) return;
-  S.reloadT = w.reload;
+  if (S.reloadT > 0 || S.ammo[S.wKey] >= w.mag) return;
+  if (!cfg.infiniteAmmo && S.reserve[S.wKey] <= 0) return;
+  // 탄이 남아 있으면 빠른 장전(약실에 한 발 남음), 비었으면 노리쇠 후퇴까지 포함한 긴 장전
+  S.reloadT = S.reloadDur = S.ammo[S.wKey] > 0 ? w.reloadTac : w.reloadEmpty;
+  S.burstLeft = 0;
   S.ads = false;
   sfx.reload();
 }
 
-// 현재 탄퍼짐(도)
-function spreadDeg(w, adsE, speedFrac) {
-  return (w.spreadBase + S.bloom + w.moveSpread * Math.min(1, speedFrac)) * lerp(1, w.adsSpreadMul, adsE);
+function finishReload() {
+  const w = WEAPONS[S.wKey];
+  const need = w.mag - S.ammo[S.wKey];
+  const take = cfg.infiniteAmmo ? need : Math.min(need, S.reserve[S.wKey]);
+  S.ammo[S.wKey] += take;
+  if (!cfg.infiniteAmmo) S.reserve[S.wKey] -= take;
+  S.reloadT = 0;
+  sfx.reloadDone();
+}
+
+// 현재 탄퍼짐(도): 지향사격 ↔ 정조준 사이를 ADS 진행도로 보간, 앉으면 감소
+function spreadDeg(w, adsE, speedFrac, crouchE) {
+  const base = lerp(w.hip.base, w.ads.base, adsE);
+  const move = lerp(w.hip.move, w.ads.move, adsE) * Math.min(1, speedFrac);
+  return (base + move + S.bloom) * lerp(1, w.crouchMul, crouchE);
 }
 
 // 원뿔 안의 무작위 방향 (균일 원판 분포)
@@ -94,82 +134,96 @@ function coneDir(out, baseQ, coneRad) {
   return out.applyQuaternion(baseQ);
 }
 
-const pelletQ = new THREE.Quaternion();
-const fwdZ = new THREE.Vector3(0, 0, -1);
+// 명중 피드백은 탄이 도착한 프레임에 모아서 한 번에 (샷건 펠릿 합산)
+const pendingShots = new Set();
 
-function shoot(w, adsE, speedFrac) {
+function shoot(w, adsE, speedFrac, crouchE) {
   S.ammo[S.wKey]--;
-  S.cooldown += 60 / w.rpm;
+  if (S.time - S.lastShot > w.recoil.reset) S.shotIdx = 0;
   S.lastShot = S.time;
   S.shots++;
 
-  eye.copy(camera.position);
+  eye.set(P.pos.x, S.eyeH, P.pos.z);
   aimE.set(P.pitch, P.yaw, 0);
   aimQ.setFromEuler(aimE);
-  const center = coneDir(new THREE.Vector3(), aimQ, spreadDeg(w, adsE, speedFrac) * DEG);
+  const center = coneDir(new THREE.Vector3(), aimQ, spreadDeg(w, adsE, speedFrac, crouchE) * DEG);
   pelletQ.setFromUnitVectors(fwdZ, center);
-  vm.muzzleWorld(muzzle);
+  const off = vm.muzzleWorld(muzzle).sub(eye);
 
-  const res = { hit: false, head: false, kill: false, dmg: 0, point: null };
+  const shot = { w, dmg: 0, head: false, kill: false, point: null, hitCounted: false, headCounted: false };
+  const pSpread = w.pelletSpread * lerp(1, w.adsPelletMul || 1, adsE) * DEG;
   for (let i = 0; i < w.pellets; i++) {
-    const dir = w.pellets > 1 ? coneDir(tmpDir, pelletQ, w.pelletSpread * DEG) : center;
-    const h = world.raycast(eye, dir, w.range);
-    if (h) endPt.copy(h.point); else endPt.copy(eye).addScaledVector(dir, w.range);
-    if (w.pellets === 1 || i % 2 === 0) world.tracer(muzzle, endPt);
-    if (!h) continue;
-    const ud = h.object.userData;
-    if (ud.bot) {
-      const head = ud.part === 'head';
-      const fall = h.distance <= w.falloffStart ? 1
-        : lerp(1, w.minDmgMul, clamp((h.distance - w.falloffStart) / Math.max(1, w.range - w.falloffStart), 0, 1));
-      const dmg = w.damage * (head ? w.headMul : 1) * fall;
-      const r = ud.bot.damage(dmg, ud.part);
-      res.hit = true;
-      res.dmg += dmg;
-      res.head ||= head;
-      res.kill ||= r.killed;
-      res.point ||= h.point.clone();
-      world.impact(h.point, head ? 'head' : 'flesh');
-    } else {
-      world.impact(h.point, 'wall');
-    }
+    const dir = w.pellets > 1 ? coneDir(tmpDir, pelletQ, pSpread) : center;
+    world.fire(eye, dir, w.velocity, shot, w.pellets === 1 || i % 2 === 0, off);
   }
 
-  // 손맛: 십자선 확장, 화면 흔들림, 반동(실제 조준이 올라감), FOV 펀치, 뷰모델 킥, 사운드, 진동
-  S.bloom = Math.min(w.spreadMax, S.bloom + w.spreadPerShot * cfg.crosshairBloom);
-  S.trauma = Math.min(1, S.trauma + w.shake * cfg.shakeIntensity);
-  const kick = w.recoilPitch * cfg.recoilScale * DEG * lerp(1, 0.65, adsE);
-  P.pitch += kick;
-  P.recoilDebt += kick;
-  P.yaw += (Math.random() * 2 - 1) * w.recoilYaw * cfg.recoilScale * DEG;
-  S.fovPunch += w.fovPunch;
+  // 반동 패턴: 발 순서대로 정해진 [위, 오른쪽] + 약간의 랜덤
+  const R = w.recoil;
+  const [up, side] = R.pattern[Math.min(S.shotIdx, R.pattern.length - 1)];
+  const k = cfg.recoilScale * R.scale * lerp(1, R.adsMul, adsE) * lerp(1, 0.85, crouchE) * DEG;
+  const kickUp = up * (1 + (Math.random() * 2 - 1) * R.jitter) * k;
+  P.pitch += kickUp;
+  P.recoilDebt += kickUp;
+  P.yaw -= (side + (Math.random() * 2 - 1) * R.jitter * 0.5) * k;
+  S.shotIdx++;
+
+  // 손맛
+  const perShot = lerp(w.hip.perShot, w.ads.perShot, adsE);
+  const maxBloom = lerp(w.hip.max, w.ads.max, adsE);
+  S.bloom = Math.max(S.bloom, Math.min(maxBloom, S.bloom + perShot * cfg.crosshairBloom));
+  S.trauma = Math.min(1, S.trauma + w.shake * cfg.shakeIntensity * lerp(1, 0.7, adsE));
+  S.fovPunch += w.fovPunch * lerp(1, 0.5, adsE);
   vm.fire(w, cfg.muzzleFlash);
   sfx.shot(w);
-  if (res.hit) {
-    S.hits++;
-    if (res.head) S.heads++;
-    if (res.kill) S.kills++;
-    fx.hit(res, w);
-  } else {
-    fx.vibrate(w.vib);
+  fx.vibrate(w.vib);
+}
+
+function onBulletHit(b, h, dist) {
+  const ud = h.object.userData;
+  const shot = b.shot;
+  if (!ud.bot) { world.impact(h.point, 'wall'); return; }
+  const head = ud.part === 'head';
+  const dmg = damageAt(shot.w, dist) * (head ? shot.w.headMul : 1);
+  const r = ud.bot.damage(dmg, ud.part);
+  shot.dmg += dmg;
+  shot.head ||= head;
+  shot.kill ||= r.killed;
+  shot.point ||= h.point.clone();
+  pendingShots.add(shot);
+  world.impact(h.point, head ? 'head' : 'flesh');
+}
+
+function flushHits() {
+  for (const s of pendingShots) {
+    if (!s.hitCounted) { S.hits++; s.hitCounted = true; }
+    if (s.head && !s.headCounted) { S.heads++; s.headCounted = true; }
+    if (s.kill) S.kills++;
+    fx.hit({ dmg: s.dmg, head: s.head, kill: s.kill, point: s.point }, s.w);
+    s.dmg = 0; s.head = false; s.kill = false; s.point = null;
   }
+  pendingShots.clear();
 }
 
 // ── HUD ───────────────────────────────────
 const hud = {
   cur: $('#ammo-cur'), max: $('#ammo-max'), name: $('#weapon-name'),
-  bar: $('#reload-bar'), barFill: $('#reload-bar i'), stats: $('#stats'), ads: $('#btn-ads'),
+  bar: $('#reload-bar'), barFill: $('#reload-bar i'), stats: $('#stats'),
+  ads: $('#btn-ads'), crouch: $('#btn-crouch'), mode: $('#btn-mode'), scope: $('#btn-scope'),
 };
 let statT = 0, frames = 0, fps = 0;
 function updateHud(dt, w, a) {
   const ammo = S.ammo[S.wKey];
   hud.cur.textContent = ammo;
   hud.cur.classList.toggle('low', ammo <= Math.ceil(w.mag * 0.25));
-  hud.max.textContent = '/' + w.mag;
+  hud.max.textContent = ' / ' + (cfg.infiniteAmmo ? '∞' : S.reserve[S.wKey]);
   hud.name.textContent = w.name;
   hud.bar.classList.toggle('on', S.reloadT > 0);
-  hud.barFill.style.width = S.reloadT > 0 ? (1 - S.reloadT / w.reload) * 100 + '%' : '0';
+  hud.barFill.style.width = S.reloadT > 0 ? (1 - S.reloadT / S.reloadDur) * 100 + '%' : '0';
   hud.ads.classList.toggle('on', S.ads);
+  hud.crouch.classList.toggle('on', S.crouch);
+  hud.mode.textContent = MODE_NAMES[curMode()];
+  hud.mode.classList.toggle('single-only', w.modes.length < 2);
+  hud.scope.textContent = SCOPES[curScopeKey()].name;
   frames++;
   statT += dt;
   if (statT >= 0.5) {
@@ -179,7 +233,8 @@ function updateHud(dt, w, a) {
     const acc = S.shots ? Math.round(S.hits / S.shots * 100) : 0;
     const hs = S.hits ? Math.round(S.heads / S.hits * 100) : 0;
     const asst = !cfg.assistEnabled ? '꺼짐' : a.target ? `감속 ×${a.friction.toFixed(2)}` : '대기';
-    hud.stats.textContent = `FPS ${fps}   킬 ${S.kills}\n명중 ${acc}%   헤드 ${hs}%\n조준보정 ${asst}`;
+    const zone = MAP.zones.find((z) => P.pos.x >= z.x0 && P.pos.x <= z.x1 && P.pos.z >= z.z0 && P.pos.z <= z.z1);
+    hud.stats.textContent = `FPS ${fps}   킬 ${S.kills}\n명중 ${acc}%   헤드 ${hs}%\n조준보정 ${asst}\n구역: ${zone ? zone.name : '연결 통로'}`;
   }
 }
 
@@ -192,14 +247,30 @@ function frame(now) {
   S.time += dt;
 
   const inp = input.consume();
+  const press = inp.pressed;
   if (inp.weapon) switchWeapon(inp.weapon);
   const w = WEAPONS[S.wKey];
-  if (inp.reload) startReload();
+  if (press.has('reload')) startReload();
+  if (press.has('map')) mapView.toggle();
+  if (press.has('crouch')) S.crouch = !S.crouch;
+  if (press.has('mode') && w.modes.length > 1) {
+    S.modeIdx[S.wKey] = (S.modeIdx[S.wKey] + 1) % w.modes.length;
+    S.burstLeft = 0;
+  }
+  if (press.has('scope') && w.scopes.length > 1) {
+    S.scopeIdx[S.wKey] = (S.scopeIdx[S.wKey] + 1) % w.scopes.length;
+    vm.setScope(curScopeKey());
+  }
+  const scope = SCOPES[curScopeKey()];
 
-  eye.set(P.pos.x, EYE, P.pos.z);
+  S.crouchT = clamp(S.crouchT + (S.crouch ? 1 : -1) * dt / 0.15, 0, 1);
+  const crouchE = smooth(S.crouchT);
+  S.eyeH = lerp(STAND_EYE, CROUCH_EYE, crouchE);
+
+  eye.set(P.pos.x, S.eyeH, P.pos.z);
   const a = assist.update(eye, P.yaw, P.pitch, world, cfg);
 
-  if (inp.adsToggle && S.reloadT <= 0) {
+  if (press.has('ads') && S.reloadT <= 0) {
     S.ads = !S.ads;
     // 조준 시 스냅: ADS 진입 순간 보정 대상 쪽으로 붙음
     if (S.ads && a.target && cfg.adsSnap > 0) {
@@ -207,22 +278,23 @@ function frame(now) {
       P.pitch += a.pitchErr * cfg.adsSnap * a.weight;
     }
   }
-  S.adsT = clamp(S.adsT + (S.ads ? 1 : -1) * dt / 0.16, 0, 1);
+  // 정조준 전환 시간 = 무기 기본 + 조준경 배율에 따른 추가 시간
+  S.adsT = clamp(S.adsT + (S.ads ? 1 : -1) * dt / (w.adsTime + scope.adsTimeAdd), 0, 1);
   const adsE = smooth(S.adsT);
 
   if (S.reloadT > 0) {
     S.reloadT -= dt;
-    if (S.reloadT <= 0) { S.reloadT = 0; S.ammo[S.wKey] = w.mag; sfx.reloadDone(); }
+    if (S.reloadT <= 0) finishReload();
   }
 
-  // 시점 회전: 스무딩 → 감도(ADS 배율) → 조준 보정 감속
+  // 시점 회전: 스무딩 → 감도(조준경별 배율) → 조준 보정 감속
   S.pendX += inp.lookX;
   S.pendY += inp.lookY;
   const k = cfg.lookSmoothing <= 0 ? 1 : 1 - Math.pow(cfg.lookSmoothing, dt * 60);
   const ax = S.pendX * k, ay = S.pendY * k;
   S.pendX -= ax;
   S.pendY -= ay;
-  const zoomK = lerp(1, cfg.adsSensMul * w.adsSensK, adsE);
+  const zoomK = lerp(1, cfg[scope.sensKey], adsE);
   const fr = a.target ? a.friction : 1;
   P.yaw -= ax * cfg.lookSensX * DEG * zoomK * fr;
   const dp = -ay * cfg.lookSensY * DEG * zoomK * fr * (cfg.invertY ? -1 : 1);
@@ -238,7 +310,7 @@ function frame(now) {
   }
 
   // 이동
-  const sp = cfg.moveSpeed * w.mobility * lerp(1, 0.6, adsE);
+  const sp = cfg.moveSpeed * w.mobility * lerp(1, 0.6, adsE) * lerp(1, 0.5, crouchE);
   const sy = Math.sin(P.yaw), cy = Math.cos(P.yaw);
   const tx = (-sy * inp.moveY + cy * inp.moveX) * sp;
   const tz = (-cy * inp.moveY - sy * inp.moveX) * sp;
@@ -251,16 +323,33 @@ function frame(now) {
   const speedFrac = Math.hypot(P.vel.x, P.vel.z) / cfg.moveSpeed;
   P.bob += Math.hypot(P.vel.x, P.vel.z) * dt * 1.9;
 
-  // 사격 (단발 무기는 0.15초 입력 버퍼로 약간 일찍 눌러도 발사)
+  // 사격: 연사 = 누르는 동안, 단발/점사 = 누를 때마다 (0.15초 입력 버퍼)
+  const mode = curMode();
   if (inp.firePressed) S.fireBuffer = 0.15;
   S.fireBuffer -= dt;
-  let want = w.auto ? inp.fireHeld : S.fireBuffer > 0;
+  let want;
+  if (S.burstLeft > 0) want = true;
+  else if (mode === 'auto') want = inp.fireHeld;
+  else want = S.fireBuffer > 0;
   if (cfg.autoFire && S.onTarget) want = true;
   S.cooldown -= dt;
   if (!want && S.cooldown < 0) S.cooldown = 0;
   if (want && S.cooldown <= 0 && S.reloadT <= 0) {
-    if (S.ammo[S.wKey] > 0) { shoot(w, adsE, speedFrac); S.fireBuffer = 0; }
-    else { if (inp.firePressed) sfx.dry(); startReload(); }
+    if (S.ammo[S.wKey] > 0) {
+      if (mode === 'burst' && S.burstLeft === 0) S.burstLeft = w.burstCount;
+      shoot(w, adsE, speedFrac, crouchE);
+      S.fireBuffer = 0;
+      if (S.burstLeft > 0) {
+        S.burstLeft--;
+        S.cooldown += S.burstLeft > 0 ? 60 / w.burstRpm : w.burstDelay;
+      } else {
+        S.cooldown += 60 / w.rpm;
+      }
+    } else {
+      S.burstLeft = 0;
+      if (inp.firePressed) sfx.dry();
+      startReload();
+    }
   }
 
   // 반동 회복 / 십자선 회복 / 트라우마 감소
@@ -278,23 +367,29 @@ function frame(now) {
   const sh = S.trauma * S.trauma;
   const nt = S.time * 28;
   const bobA = Math.min(1, speedFrac) * (1 - adsE * 0.8);
-  camera.position.set(P.pos.x, EYE + Math.sin(P.bob * 2) * 0.03 * bobA, P.pos.z);
+  camera.position.set(P.pos.x, S.eyeH + Math.sin(P.bob * 2) * 0.03 * bobA, P.pos.z);
   camera.rotation.set(P.pitch + noise(nt, 1) * 2.2 * DEG * sh, P.yaw + noise(nt, 2) * 2.2 * DEG * sh, noise(nt, 3) * 3 * DEG * sh);
-  const fov = lerp(BASE_FOV, w.adsFov, adsE) + S.fovPunch * cfg.fovPunch;
+  const fov = lerp(BASE_FOV, zoomFov(scope.zoom), adsE) + S.fovPunch * cfg.fovPunch;
   if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
   camera.updateMatrixWorld();
 
   // 십자선이 적 위에 있는지 (빨간 십자선 / 자동 사격)
   aimE.set(P.pitch, P.yaw, 0);
   tmpDir.set(0, 0, -1).applyEuler(aimE);
-  const ch = world.raycast(eye.copy(camera.position), tmpDir, w.range);
+  const ch = world.raycast(eye.set(P.pos.x, S.eyeH, P.pos.z), tmpDir, 150);
   S.onTarget = !!(ch && ch.object.userData.bot);
 
-  world.update(dt, camera);
-  const scoped = !!w.scope && adsE > 0.85;
-  vm.update(dt, { adsE, lookX: ax, lookY: ay, speedFrac, bob: P.bob, hide: scoped, reloadFrac: S.reloadT > 0 ? 1 - S.reloadT / w.reload : -1 });
-  fx.update(dt, { spreadDeg: spreadDeg(w, adsE, speedFrac) + (w.pellets > 1 ? w.pelletSpread : 0), onTarget: S.onTarget, scoped, assist: a });
+  world.update(dt, camera, onBulletHit);
+  flushHits();
+
+  // 조준경 표시: 배율 조준경은 거의 다 들어올렸을 때 총을 숨기고 스코프 화면으로
+  const scoped = scope.sight === 'scope' && adsE > 0.85;
+  const overlay = scope.sight === 'scope' ? (scoped ? curScopeKey() : null) : (adsE > 0.7 ? curScopeKey() : null);
+  vm.update(dt, { adsE, lookX: ax, lookY: ay, speedFrac, bob: P.bob, hide: scoped, reloadFrac: S.reloadT > 0 ? 1 - S.reloadT / S.reloadDur : -1 });
+  const pellet = w.pellets > 1 ? w.pelletSpread * lerp(1, w.adsPelletMul || 1, adsE) : 0;
+  fx.update(dt, { spreadDeg: spreadDeg(w, adsE, speedFrac, crouchE) + pellet, onTarget: S.onTarget, hideCross: adsE > 0.55, overlay, assist: a });
   updateHud(dt, w, a);
+  mapView.draw(P, S.eyeH);
 
   renderer.render(scene, camera);
 }
@@ -314,4 +409,4 @@ $('#start-btn').addEventListener('click', async () => {
 });
 
 // 디버그용
-window.__game = { P, S, world, cfg };
+window.__game = { P, S, world, cfg, WEAPONS, mapView };

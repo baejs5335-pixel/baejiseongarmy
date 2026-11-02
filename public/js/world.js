@@ -1,14 +1,10 @@
-// 테스트 맵, 표적 봇, 탄 궤적/피격 이펙트
+// 맵 생성, 표적 봇, 탄도(탄속·낙차) 시뮬레이션, 피격 이펙트
 import * as THREE from 'three';
 import { toon, addOutline, radialTexture } from './toon.js';
+import { COLORS } from './maps.js';
+import { GRAVITY } from './weapons.js';
 
-const BOT_SPAWNS = [
-  { x: -1, z: -6, lane: 2.5, speed: 2.2 },               // 낮은 벽 뒤 좌우 이동 (헤드 연습)
-  { x: 6, z: -9, lane: 0, speed: 0 },                    // 정지 표적
-  { x: -6, z: -14, lane: 3, speed: 3.2 },                // 빠른 좌우 이동 (트래킹)
-  { x: 9, z: -20, lane: 2, speed: 2.5, color: 0x4a7fe0 },// 원거리 (저격)
-  { x: -10, z: -2, lane: 0, speed: 0, color: 0xe08a3a }, // 근거리 (샷건)
-];
+const MAX_BULLET_DIST = 220;
 
 class Bot {
   constructor(world, spawn) {
@@ -129,113 +125,157 @@ class Bot {
 }
 
 export class World {
-  constructor(scene) {
+  constructor(scene, map) {
     this.scene = scene;
+    this.map = map;
     this.solids = [];
     this.boxes = [];
     this.hittables = [];
     this.bots = [];
+    this.bullets = [];
     this.ray = new THREE.Raycaster();
     this._v = new THREE.Vector3();
+    this._seg = new THREE.Vector3();
+    this._dir = new THREE.Vector3();
+    this._head = new THREE.Vector3();
 
     scene.background = new THREE.Color(0x9ad7ff);
-    scene.fog = new THREE.Fog(0x9ad7ff, 40, 95);
+    scene.fog = new THREE.Fog(0x9ad7ff, 70, 170);
     scene.add(new THREE.HemisphereLight(0xffffff, 0x9a8a70, 1.4));
     const sun = new THREE.DirectionalLight(0xffffff, 2.0);
     sun.position.set(8, 15, 6);
     scene.add(sun);
 
     this.buildFloor();
-    this.buildMap();
-    for (const s of BOT_SPAWNS) this.bots.push(new Bot(this, s));
+    for (const b of map.boxes) this.addBox(b);
+    for (const s of map.bots) this.bots.push(new Bot(this, s));
     this.buildFxPools();
   }
 
   buildFloor() {
+    const { minX, maxX, minZ, maxZ } = this.map.bounds;
+    const w = maxX - minX + 2, d = maxZ - minZ + 2;
     const c = document.createElement('canvas');
     c.width = c.height = 128;
     const g = c.getContext('2d');
-    g.fillStyle = '#ead9a8';
+    g.fillStyle = '#ffffff';
     g.fillRect(0, 0, 128, 128);
-    g.strokeStyle = 'rgba(120,90,40,.22)';
+    g.strokeStyle = 'rgba(60,50,30,.18)';
     g.lineWidth = 3;
     g.strokeRect(0, 0, 128, 128);
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(25, 25);
     tex.anisotropy = 4;
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), toon(0xffffff, { map: tex }));
+    const tiled = (sw, sd) => { const t = tex.clone(); t.repeat.set(sw / 2, sd / 2); t.needsUpdate = true; return t; };
+
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), toon(0xead9a8, { map: tiled(w, d) }));
     floor.rotation.x = -Math.PI / 2;
+    floor.position.set((minX + maxX) / 2, 0, (minZ + maxZ) / 2);
     this.scene.add(floor);
     this.solids.push(floor);
     this.hittables.push(floor);
+
+    // 구역별 바닥색 (어느 구역에 있는지 바로 알 수 있게)
+    for (const z of this.map.zones) {
+      if (!z.floor) continue;
+      const zw = z.x1 - z.x0, zd = z.z1 - z.z0;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(zw, zd), toon(z.floor, { map: tiled(zw, zd), polygonOffset: true, polygonOffsetFactor: -1 }));
+      m.rotation.x = -Math.PI / 2;
+      m.position.set((z.x0 + z.x1) / 2, 0.005, (z.z0 + z.z1) / 2);
+      m.raycast = () => {};
+      this.scene.add(m);
+    }
   }
 
-  buildMap() {
-    const WALL = 0x5c7aa6, CRATE = 0xe39b4b, CRATE2 = 0xc96f3b, BLOCK = 0x8fb3d9;
-    // 외벽
-    this.addBox(0, -25, 50, 3, 1, WALL);
-    this.addBox(0, 25, 50, 3, 1, WALL);
-    this.addBox(-25, 0, 1, 3, 50, WALL);
-    this.addBox(25, 0, 1, 3, 50, WALL);
-    // 엄폐물
-    this.addBox(-4, 4, 1.4, 1.2, 1.4, CRATE);
-    this.addBox(3.5, 3, 1.2, 1.2, 1.2, CRATE2);
-    this.addBox(0, -2, 4, 1.1, 0.6, BLOCK);     // 낮은 벽
-    this.addBox(-8, -6, 2, 2.2, 2, CRATE);
-    this.addBox(8, -5, 2, 2.2, 2, CRATE2);
-    this.addBox(-3, -10, 1.4, 1.4, 1.4, CRATE);
-    this.addBox(4, -13, 3, 1.2, 0.6, BLOCK);
-    this.addBox(0, -18, 6, 2.5, 1, WALL);
-    this.addBox(-13, 3, 1.5, 3, 6, BLOCK);
-    this.addBox(13, 3, 1.5, 3, 6, BLOCK);
-    this.addBox(-6, 10, 1.2, 1.2, 1.2, CRATE2);
-    this.addBox(6, 9, 2, 1, 1, CRATE);
-    this.addBox(6, 9, 1, 1, 1, CRATE2, 1);
-  }
-
-  addBox(x, z, w, h, d, color, y = 0) {
+  addBox({ x, z, w, d, h, type }) {
+    const color = type === 'high' && (Math.round(x + z) % 2) ? 0xc96f3b : COLORS[type];
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), toon(color));
-    m.position.set(x, y + h / 2, z);
+    m.position.set(x, h / 2, z);
     addOutline(m, 0.03);
     this.scene.add(m);
     this.solids.push(m);
     this.hittables.push(m);
-    this.boxes.push(new THREE.Box3(new THREE.Vector3(x - w / 2, y, z - d / 2), new THREE.Vector3(x + w / 2, y + h, z + d / 2)));
+    this.boxes.push(new THREE.Box3(new THREE.Vector3(x - w / 2, 0, z - d / 2), new THREE.Vector3(x + w / 2, h, z + d / 2)));
     return m;
   }
 
   buildFxPools() {
-    const tg = new THREE.BoxGeometry(0.018, 0.018, 1);
+    const tg = new THREE.BoxGeometry(0.02, 0.02, 1);
     tg.translate(0, 0, 0.5);
-    this.tracers = [];
-    for (let i = 0; i < 24; i++) {
+    this.streaks = [];
+    for (let i = 0; i < 64; i++) {
       const m = new THREE.Mesh(tg, new THREE.MeshBasicMaterial({ color: 0xfff2a0, transparent: true, depthWrite: false }));
       m.visible = false;
       m.raycast = () => {};
       this.scene.add(m);
-      this.tracers.push({ m, life: 0 });
+      this.streaks.push({ m, busy: false, fade: 0 });
     }
     const puff = radialTexture([[0, 'rgba(255,255,255,1)'], [0.4, 'rgba(255,255,255,.7)'], [1, 'rgba(255,255,255,0)']]);
     this.impacts = [];
-    for (let i = 0; i < 32; i++) {
+    for (let i = 0; i < 40; i++) {
       const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: puff, transparent: true, depthWrite: false }));
       s.visible = false;
       this.scene.add(s);
       this.impacts.push({ s, life: 0, max: 0.25, size: 0.4 });
     }
-    this.ti = 0;
     this.ii = 0;
   }
 
-  tracer(from, to) {
-    const t = this.tracers[this.ti++ % this.tracers.length];
-    t.m.position.copy(from);
-    t.m.scale.set(1, 1, Math.max(0.01, from.distanceTo(to)));
-    t.m.lookAt(to);
-    t.m.visible = true;
-    t.life = 0.06;
+  takeStreak() {
+    const s = this.streaks.find((x) => !x.busy && x.fade <= 0) || this.streaks.find((x) => !x.busy);
+    if (!s) return null;
+    s.busy = true;
+    s.fade = 0;
+    s.m.material.opacity = 0.95;
+    return s;
+  }
+
+  // 탄환 발사. 시뮬레이션은 눈 위치에서, 궤적 이펙트는 총구에서 시작해 실제 탄도로 합쳐집니다.
+  fire(origin, dir, speed, shot, tracer, muzzleOffset) {
+    this.bullets.push({
+      pos: origin.clone(), vel: dir.clone().multiplyScalar(speed), dist: 0, shot,
+      off: muzzleOffset.clone(), streak: tracer ? this.takeStreak() : null,
+    });
+  }
+
+  drawStreak(b, head, dir) {
+    const s = b.streak;
+    if (!s) return;
+    const fade = Math.max(0, 1 - b.dist / 8);
+    this._head.copy(head).addScaledVector(b.off, fade);
+    s.m.position.copy(this._head);
+    s.m.scale.set(1, 1, Math.max(0.05, Math.min(3, b.dist + 0.5)));
+    s.m.lookAt(this._v.copy(this._head).sub(dir));
+    s.m.visible = true;
+  }
+
+  endBullet(i) {
+    const b = this.bullets[i];
+    if (b.streak) { b.streak.busy = false; b.streak.fade = 0.05; }
+    this.bullets.splice(i, 1);
+  }
+
+  updateBullets(dt, onHit) {
+    for (let i = this.bullets.length - 1; i >= 0; i--) {
+      const b = this.bullets[i];
+      const seg = this._seg.copy(b.vel).multiplyScalar(dt);
+      const len = seg.length();
+      const dir = this._dir.copy(seg).divideScalar(len);
+      const h = this.raycast(b.pos, dir, len);
+      if (h) {
+        b.dist += h.distance;
+        this.drawStreak(b, h.point, dir);
+        onHit(b, h, b.dist);
+        this.endBullet(i);
+        continue;
+      }
+      b.pos.add(seg);
+      b.dist += len;
+      b.vel.y -= GRAVITY * dt;
+      this.drawStreak(b, b.pos, dir);
+      if (b.dist > MAX_BULLET_DIST || b.pos.y < -2) this.endBullet(i);
+    }
   }
 
   impact(point, kind) {
@@ -266,6 +306,10 @@ export class World {
     return this.ray.intersectObjects(this.solids, false).length > 0;
   }
 
+  insideBox(x, z, pad) {
+    return this.boxes.some((b) => x > b.min.x - pad && x < b.max.x + pad && z > b.min.z - pad && z < b.max.z + pad);
+  }
+
   // 원(플레이어) vs AABB 밀어내기
   collide(pos, r) {
     for (const b of this.boxes) {
@@ -289,13 +333,14 @@ export class World {
     }
   }
 
-  update(dt, cam) {
+  update(dt, cam, onHit) {
     for (const b of this.bots) b.update(dt, cam);
-    for (const t of this.tracers) {
-      if (!t.m.visible) continue;
-      t.life -= dt;
-      t.m.material.opacity = Math.max(0, t.life / 0.06);
-      if (t.life <= 0) t.m.visible = false;
+    this.updateBullets(dt, onHit);
+    for (const s of this.streaks) {
+      if (s.busy || s.fade <= 0) continue;
+      s.fade -= dt;
+      s.m.material.opacity = Math.max(0, s.fade / 0.05) * 0.95;
+      if (s.fade <= 0) s.m.visible = false;
     }
     for (const it of this.impacts) {
       if (!it.s.visible) continue;

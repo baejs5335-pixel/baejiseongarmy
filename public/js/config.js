@@ -10,7 +10,11 @@ export const DEFAULTS = {
   // 화면 회전
   lookSensX: 0.30,      // 도/px
   lookSensY: 0.24,
-  adsSensMul: 0.6,
+  adsSensMul: 0.6,      // 기본 조준(아이언사이트)
+  sensRedDot: 0.55,
+  sens2x: 0.42,
+  sens4x: 0.26,
+  sens8x: 0.15,
   lookAccel: 0.25,      // 빠르게 밀수록 더 많이 도는 정도
   lookSmoothing: 0.3,   // 0 = 즉시 반응
   invertY: false,
@@ -33,6 +37,7 @@ export const DEFAULTS = {
   fovPunch: 1.0,
   muzzleFlash: true,
   damageNumbers: true,
+  infiniteAmmo: true,
   // 진동 / 사운드
   vibration: true,
   vibrationScale: 1.0,
@@ -49,12 +54,18 @@ export const SCHEMA = [
   { group: '화면 회전', items: [
     { key: 'lookSensX', label: '가로 감도', min: 0.05, max: 1, step: 0.01, unit: '°/px' },
     { key: 'lookSensY', label: '세로 감도', min: 0.05, max: 1, step: 0.01, unit: '°/px' },
-    { key: 'adsSensMul', label: '조준(ADS) 감도 배율', min: 0.2, max: 1.2, step: 0.01 },
     { key: 'lookAccel', label: '회전 가속', min: 0, max: 1.5, step: 0.01, hint: '빠른 스와이프일수록 더 크게 회전' },
     { key: 'lookSmoothing', label: '회전 스무딩', min: 0, max: 0.85, step: 0.01, hint: '높을수록 부드럽지만 반응이 늦어집니다' },
     { key: 'invertY', label: '세로 반전', type: 'bool' },
     { key: 'fireBtnLook', label: '발사 버튼으로 시점 회전', type: 'bool', hint: '발사 버튼을 누른 채 드래그해서 조준' },
     { key: 'leftFire', label: '왼쪽 발사 버튼', type: 'bool' },
+  ] },
+  { group: '조준경별 감도 (기본 감도 대비 배율)', items: [
+    { key: 'adsSensMul', label: '기본 조준', min: 0.1, max: 1.2, step: 0.01 },
+    { key: 'sensRedDot', label: '레드닷', min: 0.1, max: 1.2, step: 0.01 },
+    { key: 'sens2x', label: '2배율', min: 0.05, max: 1, step: 0.01 },
+    { key: 'sens4x', label: '4배율', min: 0.05, max: 1, step: 0.01 },
+    { key: 'sens8x', label: '8배율', min: 0.03, max: 1, step: 0.01 },
   ] },
   { group: '조준 보정 (Aim Assist)', items: [
     { key: 'assistEnabled', label: '조준 보정 사용', type: 'bool' },
@@ -74,6 +85,7 @@ export const SCHEMA = [
     { key: 'fovPunch', label: '시야(FOV) 펀치', min: 0, max: 2.5, step: 0.05 },
     { key: 'muzzleFlash', label: '총구 화염', type: 'bool' },
     { key: 'damageNumbers', label: '데미지 숫자', type: 'bool' },
+    { key: 'infiniteAmmo', label: '예비 탄약 무한', type: 'bool' },
   ] },
   { group: '진동 · 사운드', items: [
     { key: 'vibration', label: '진동', type: 'bool', hint: 'Android 브라우저만 지원 (iOS Safari는 진동 API 미지원)' },

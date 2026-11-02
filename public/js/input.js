@@ -8,7 +8,8 @@ export class Input {
   constructor() {
     this.moveX = 0; this.moveY = 0;
     this.lookX = 0; this.lookY = 0;
-    this.firePressed = false; this.adsToggle = false; this.reload = false; this.weapon = null;
+    this.firePressed = false; this.weapon = null;
+    this.pressed = new Set();
     this.keys = new Set();
     this.mouseFire = false;
     this.locked = false;
@@ -33,8 +34,9 @@ export class Input {
         b.classList.add('pressed');
         if (cfg.fireBtnLook) this.startLook(e);
       }));
-    $('#btn-ads').addEventListener('pointerdown', (e) => { e.preventDefault(); this.adsToggle = true; });
-    $('#btn-reload').addEventListener('pointerdown', (e) => { e.preventDefault(); this.reload = true; });
+    // data-press 버튼: ads, reload, crouch, mode, scope, map
+    document.querySelectorAll('[data-press]').forEach((b) =>
+      b.addEventListener('pointerdown', (e) => { e.preventDefault(); this.pressed.add(b.dataset.press); }));
     document.querySelectorAll('[data-weapon]').forEach((b) =>
       b.addEventListener('pointerdown', (e) => { e.preventDefault(); this.weapon = b.dataset.weapon; }));
 
@@ -55,7 +57,7 @@ export class Input {
     document.addEventListener('mousedown', (e) => {
       if (!this.locked) return;
       if (e.button === 0) { this.firePressed = true; this.mouseFire = true; }
-      if (e.button === 2) this.adsToggle = true;
+      if (e.button === 2) this.pressed.add('ads');
     });
     document.addEventListener('mouseup', (e) => { if (e.button === 0) this.mouseFire = false; });
 
@@ -154,14 +156,14 @@ export class Input {
     if (down) {
       if (!e.repeat) {
         if (e.code === 'Space') this.firePressed = true;
-        if (e.code === 'KeyQ') this.adsToggle = true;
-        if (e.code === 'KeyR') this.reload = true;
+        const press = { KeyQ: 'ads', KeyR: 'reload', KeyC: 'crouch', KeyB: 'mode', KeyT: 'scope', KeyM: 'map' }[e.code];
+        if (press) this.pressed.add(press);
         if (e.code === 'KeyL') {
           if (this.locked) document.exitPointerLock();
           else this.layer.requestPointerLock?.();
         }
-        const n = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(e.code);
-        if (n >= 0) this.weapon = ['AR', 'SR', 'SG', 'HG'][n];
+        const n = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].indexOf(e.code);
+        if (n >= 0) this.weapon = ['AR', 'SMG', 'SR', 'SG', 'HG'][n];
       }
       this.keys.add(e.code);
     } else {
@@ -184,12 +186,12 @@ export class Input {
       lookActive: this.looks.size > 0 || (this.locked && (this.lookX !== 0 || this.lookY !== 0)),
       fireHeld: this.fires.size > 0 || this.mouseFire || k.has('Space'),
       firePressed: this.firePressed,
-      adsToggle: this.adsToggle,
-      reload: this.reload,
+      pressed: this.pressed,
       weapon: this.weapon,
     };
     this.lookX = this.lookY = 0;
-    this.firePressed = this.adsToggle = this.reload = false;
+    this.firePressed = false;
+    this.pressed = new Set();
     this.weapon = null;
     return out;
   }

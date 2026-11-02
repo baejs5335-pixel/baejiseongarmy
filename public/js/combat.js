@@ -95,8 +95,8 @@ export class PlayerUnit {
     this.group.position.copy(this.P.pos);
     const k = eyeH / this.hit.d.eye;
     this.group.scale.y = k;
-    this.chestY = this.hit.d.chestY * k;
-    this.headY = eyeH;
+    this.chestY = this.P.pos.y + this.hit.d.chestY * k;
+    this.headY = this.P.pos.y + eyeH;
   }
 
   damage(d, part, attacker) {
@@ -237,6 +237,7 @@ export class Soldier {
     if (best) {
       if (best !== this.target) {
         const diff = g.rules.diff;
+        if (!this.target) g.hooks.spotted?.(this, best);
         this.target = best;
         this.reactT = diff.reaction * (0.8 + Math.random() * 0.4);
         this.errMag = diff.aimErr * DEG * (0.7 + Math.random() * 0.6) * (1 + bd / 50);
@@ -354,8 +355,12 @@ export class Soldier {
       const dx = this.pos.x - c.pos.x, dz = this.pos.z - c.pos.z, d = Math.hypot(dx, dz);
       if (d > 0 && d < 0.7) { this.pos.x += dx / d * (0.7 - d) * 0.5; this.pos.z += dz / d * (0.7 - d) * 0.5; }
     }
+    // 발소리: 약 1.9m마다 한 걸음
+    const moved = Math.hypot(this.pos.x - px, this.pos.z - pz);
+    this.stepDist = (this.stepDist || 0) + moved;
+    if (this.stepDist > 1.9) { this.stepDist = 0; g.hooks.step?.(this); }
     // 끼임 감지 → 새 목적지
-    if (dir && Math.hypot(this.pos.x - px, this.pos.z - pz) < sp * dt * 0.2) {
+    if (dir && moved < sp * dt * 0.2) {
       this.stuckT += dt;
       if (this.stuckT > 0.8) { this.stuckT = 0; this.path = null; this.roam = null; this.pickRoam(); }
     } else this.stuckT = 0;
@@ -391,7 +396,7 @@ export class Soldier {
         if (d < 2.0 && this.cooldown <= 0 && err < 30 * DEG) {
           const stab = Math.random() < 0.35, m = stab ? w.stab : w.slash;
           this.cooldown = stab ? m.cooldown : 60 / w.rpm;
-          g.sfx.swing(stab);
+          g.sfx.swing(stab, { x: this.pos.x, y: 1.3, z: this.pos.z });
           const r = meleeStrike(this, g.combatants, this.world, {
             pos: this.pos, yaw: this.yaw, eyeY: this.d.eye, team: this.team,
             range: m.range, angle: m.angle, dmg: m.dmg * g.rules.dmgMul, backMul: w.backMul,
@@ -432,15 +437,18 @@ export class Soldier {
       this.burstLeft = auto ? 4 + ((Math.random() * 6) | 0) : 1;
       this.pauseT = auto ? 0.2 + Math.random() * 0.35 : 0.1 + Math.random() * 0.3;
     }
-    const d = Math.hypot(this.pos.x - g.player.pos.x, this.pos.z - g.player.pos.z);
-    g.sfx.shot(w, Math.max(0, 1 - d / 90) * 0.75);
+    // 총을 쏘면 미니맵에 잠깐 드러나고, 근처 적이 소리를 듣고 몰려옴
+    this.revealUntil = g.now + 2;
+    g.hear(this.pos, 45, this);
+    g.hooks.shot?.(this, w);
   }
 }
 
 // ── 매치 진행 ─────────────────────────────────
 export class Match {
-  constructor({ world, nav, map, rules, sfx, player, onKill, onEnd }) {
-    Object.assign(this, { world, nav, map, rules, sfx, player });
+  // hooks: { step(soldier), shot(soldier, w), spotted(soldier, target) } — 사운드·보이스·미니맵 연동
+  constructor({ world, nav, map, rules, sfx, player, onKill, onEnd, hooks = {} }) {
+    Object.assign(this, { world, nav, map, rules, sfx, player, hooks });
     this.onKillCb = onKill;
     this.onEnd = onEnd;
     this.now = 0;
@@ -460,6 +468,17 @@ export class Match {
   }
 
   enemiesOf(team) { return this.combatants.filter((c) => c.team !== team); }
+
+  // 청각: radius 안의 적 AI가 소리 난 쪽을 돌아보고 확인하러 감 (발소리·총성)
+  hear(pos, radius, source) {
+    for (const c of this.combatants) {
+      if (c.isPlayer || c.dead || c.team === source.team) continue;
+      if (Math.hypot(c.pos.x - pos.x, c.pos.z - pos.z) > radius) continue;
+      c.alertBy = source;
+      c.alertT = this.now;
+      if (!c.target) { c.lastSeen = new THREE.Vector3(pos.x, 0, pos.z); c.lastSeenT = this.now; }
+    }
+  }
 
   start() {
     this.state = 'play';

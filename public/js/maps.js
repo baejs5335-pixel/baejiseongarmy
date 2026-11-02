@@ -57,15 +57,21 @@ const HALF = [
 
 const mirror = (list) => list.flatMap((b) => [b, [b[0], -b[1], b[2], b[3], b[4]]]);
 
+// 바닥 재질 (발소리): 구역에 surface가 없으면 모래
+export function surfaceAt(x, z) {
+  const zone = MAP.zones.find((q) => x >= q.x0 && x <= q.x1 && z >= q.z0 && z <= q.z1);
+  return zone?.surface || 'sand';
+}
+
 export const MAP = {
   name: '컨테이너 야드',
   bounds: { minX: -30, maxX: 30, minZ: -50, maxZ: 50 },
   boxes: [...OUTER, ...CENTER, ...mirror(HALF)].map(([x, z, w, d, type]) => ({ x, z, w, d, type, h: H[type] })),
   zones: [
-    { name: '저격 라인', x0: -30, x1: -14, z0: -38, z1: 38, floor: 0xd8e2ec },
-    { name: '우회 골목', x0: -13.5, x1: -11, z0: -18, z1: 18, floor: 0xead0b0 },
+    { name: '저격 라인', x0: -30, x1: -14, z0: -38, z1: 38, floor: 0xd8e2ec, surface: 'gravel' },
+    { name: '우회 골목', x0: -13.5, x1: -11, z0: -18, z1: 18, floor: 0xead0b0, surface: 'wood' },
     { name: '중앙 광장', x0: -10, x1: 13.5, z0: -34, z1: 34 },
-    { name: '창고 (근접전)', x0: 14.5, x1: 30, z0: -38, z1: 38, floor: 0xcfd0d6 },
+    { name: '창고 (근접전)', x0: 14.5, x1: 30, z0: -38, z1: 38, floor: 0xcfd0d6, surface: 'metal' },
     { name: 'A 스폰', x0: -30, x1: 30, z0: 38, z1: 50, floor: 0xd3e3ff },
     { name: 'B 스폰', x0: -30, x1: 30, z0: -50, z1: -38, floor: 0xffd9d2 },
   ],

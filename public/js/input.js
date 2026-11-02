@@ -64,15 +64,24 @@ export class Input {
     this.applyConfig();
   }
 
+  // 이동 패드 반경 = 설정값 × HUD 레이아웃 크기 배율
+  R() { return cfg.joyRadius * (this.joyScale || 1); }
+
+  setJoyHome(x, y, scale = 1) {
+    this.home = { x, y };
+    this.joyScale = scale;
+    this.applyConfig();
+  }
+
   applyConfig() {
-    const d = cfg.joyRadius * 2;
-    Object.assign(this.joyBase.style, { width: d + 'px', height: d + 'px', margin: `${-cfg.joyRadius}px 0 0 ${-cfg.joyRadius}px` });
+    const R = this.R(), d = R * 2;
+    Object.assign(this.joyBase.style, { width: d + 'px', height: d + 'px', margin: `${-R}px 0 0 ${-R}px` });
     $('#btn-fire-left').classList.toggle('off', !cfg.leftFire);
     if (this.joy.id === null) this.resetJoyVisual();
   }
 
   joyHome() {
-    return { x: 40 + cfg.joyRadius + 50, y: innerHeight - cfg.joyRadius - 50 };
+    return this.home || { x: 40 + cfg.joyRadius + 50, y: innerHeight - cfg.joyRadius - 50 };
   }
 
   resetJoyVisual() {
@@ -84,7 +93,7 @@ export class Input {
   }
 
   onDown(e) {
-    if (this.locked) return;
+    if (this.locked || document.body.classList.contains('editing')) return;
     e.preventDefault();
     if (e.clientX < innerWidth * 0.42 && this.joy.id === null) {
       this.joy.id = e.pointerId;
@@ -130,7 +139,7 @@ export class Input {
   }
 
   updateJoy(x, y) {
-    const R = cfg.joyRadius;
+    const R = this.R();
     let dx = x - this.joy.ox, dy = y - this.joy.oy;
     let d = Math.hypot(dx, dy);
     if (cfg.joyFloating && d > R) {
@@ -155,8 +164,9 @@ export class Input {
     if (e.target && e.target.tagName === 'INPUT') return;
     if (down) {
       if (!e.repeat) {
-        if (e.code === 'Space') this.firePressed = true;
-        const press = { KeyQ: 'ads', KeyR: 'reload', KeyC: 'crouch', KeyB: 'mode', KeyT: 'scope', KeyM: 'map' }[e.code];
+        if (e.code === 'KeyF') this.firePressed = true;
+        const press = { KeyQ: 'ads', KeyR: 'reload', KeyC: 'crouch', KeyB: 'mode', KeyT: 'scope', KeyM: 'map', Space: 'jump', Tab: 'score' }[e.code];
+        if (e.code === 'Space' || e.code === 'Tab') e.preventDefault();
         if (press) this.pressed.add(press);
         if (e.code === 'KeyL') {
           if (this.locked) document.exitPointerLock();
@@ -184,7 +194,7 @@ export class Input {
       moveX: mx, moveY: my,
       lookX: this.lookX, lookY: this.lookY,
       lookActive: this.looks.size > 0 || (this.locked && (this.lookX !== 0 || this.lookY !== 0)),
-      fireHeld: this.fires.size > 0 || this.mouseFire || k.has('Space'),
+      fireHeld: this.fires.size > 0 || this.mouseFire || k.has('KeyF'),
       firePressed: this.firePressed,
       pressed: this.pressed,
       weapon: this.weapon,

@@ -18,6 +18,9 @@
   <div id="crosshair"><i class="ch t"></i><i class="ch b"></i><i class="ch l"></i><i class="ch r"></i><i class="dot"></i></div>
   <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
   <div id="assist-ring"></div>
+  <div id="soundviz"></div>
+  <canvas id="minimap"></canvas>
+  <div id="voice-sub"></div>
   <div id="dmg-layer"></div>
   <div id="callout"></div>
 
@@ -46,6 +49,7 @@
   <button class="btn" id="btn-fire-left" data-action="fire"><span>발사</span></button>
   <button class="btn" id="btn-ads" data-press="ads"><span>조준</span></button>
   <button class="btn" id="btn-crouch" data-press="crouch"><span>앉기</span></button>
+  <button class="btn" id="btn-jump" data-press="jump"><span>점프</span></button>
   <button class="btn" id="btn-reload" data-press="reload"><span>R</span></button>
   <button id="btn-modes" data-press="modes" title="모드 선택">🎮</button>
   <button id="btn-char" data-press="char" title="캐릭터">👤</button>
@@ -57,6 +61,7 @@
 <div id="mapview" hidden></div>
 <div id="charselect" hidden></div>
 <div id="modeselect" hidden></div>
+<div id="layout-editor" hidden></div>
 
 <div id="start">
   <div class="card">
@@ -69,7 +74,7 @@
       <li><b>🗺 맵</b>에서 시야선·노출도 분석, 맵을 탭하면 순간이동</li>
       <li><b>⚙ 튜닝</b>에서 감도·타격감, 무기 스펙과 TTK 실시간 조절</li>
     </ul>
-    <p class="pc">PC: WASD 이동 · 마우스 드래그 시점 · Space 발사 · Q 조준 · C 앉기 · R 재장전 · B 사격 모드 · T 조준경 · M 맵 · 1~5 무기 · L 마우스 고정</p>
+    <p class="pc">PC: WASD 이동 · 마우스 드래그 시점 · F 발사 · Space 점프 · Q 조준 · C 앉기 · Tab 스코어보드 · R 재장전 · B 사격 모드 · T 조준경 · M 맵 · 1~5 무기 · L 마우스 고정</p>
     <button id="start-btn">탭하여 시작</button>
   </div>
 </div>

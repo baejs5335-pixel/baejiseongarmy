@@ -43,6 +43,18 @@ export const DEFAULTS = {
   vibration: true,
   vibrationScale: 1.0,
   volume: 0.6,
+  hrtf: true,
+  occlusion: true,
+  enemyStepVol: 1.5,
+  allyStepVol: 0.45,
+  ownStepVol: 0.25,
+  soundViz: true,
+  voiceOn: true,
+  voiceVolume: 0.8,
+  subtitles: true,
+  // HUD
+  showStats: false,
+  minimapRange: 30,
 };
 
 export const SCHEMA = [
@@ -89,10 +101,27 @@ export const SCHEMA = [
     { key: 'infiniteAmmo', label: '예비 탄약 무한', type: 'bool' },
     { key: 'showHitboxes', label: '표적 피격 판정 표시', type: 'bool', hint: '초록 와이어프레임 = 실제로 맞는 범위' },
   ] },
-  { group: '진동 · 사운드', items: [
+  { group: '진동', items: [
     { key: 'vibration', label: '진동', type: 'bool', hint: 'Android 브라우저만 지원 (iOS Safari는 진동 API 미지원)' },
     { key: 'vibrationScale', label: '진동 세기(길이)', min: 0, max: 3, step: 0.05 },
-    { key: 'volume', label: '볼륨', min: 0, max: 1, step: 0.01 },
+  ] },
+  { group: '사운드 (사플)', items: [
+    { key: 'volume', label: '전체 볼륨', min: 0, max: 1, step: 0.01 },
+    { key: 'hrtf', label: '3D 입체 음향 (HRTF)', type: 'bool', hint: '이어폰 권장. 끄면 좌우 패닝만' },
+    { key: 'occlusion', label: '벽 너머 소리 먹먹하게', type: 'bool' },
+    { key: 'enemyStepVol', label: '적 발소리 크기', min: 0, max: 3, step: 0.05 },
+    { key: 'allyStepVol', label: '아군 발소리 크기', min: 0, max: 2, step: 0.05 },
+    { key: 'ownStepVol', label: '내 발소리 크기', min: 0, max: 1, step: 0.05 },
+    { key: 'soundViz', label: '소리 방향 표시', type: 'bool', hint: '적 발소리·총성 방향을 화면 가운데 링에 표시' },
+  ] },
+  { group: '보이스', items: [
+    { key: 'voiceOn', label: '캐릭터 보이스', type: 'bool' },
+    { key: 'voiceVolume', label: '보이스 볼륨', min: 0, max: 1, step: 0.01 },
+    { key: 'subtitles', label: '보이스 자막', type: 'bool' },
+  ] },
+  { group: 'HUD', items: [
+    { key: 'minimapRange', label: '미니맵 반경', min: 15, max: 60, step: 1, unit: 'm' },
+    { key: 'showStats', label: '디버그 정보 표시 (FPS·명중률)', type: 'bool' },
   ] },
 ];
 

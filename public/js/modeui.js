@@ -68,10 +68,32 @@ export class MatchHud {
     this.invEl = hud.appendChild(el('<div id="invuln"></div>'));
     this.deathEl = document.body.appendChild(el('<div id="death" hidden><b></b><span></span></div>'));
     this.resultEl = document.body.appendChild(el('<div id="result" hidden></div>'));
+    this.boardEl = document.body.appendChild(el('<div id="scoreboard" hidden></div>'));
     this.hurtA = 0;
+    // 점수판을 누르면 전체 스코어보드
+    this.top.addEventListener('pointerdown', (e) => { e.preventDefault(); this.toggleBoard(); });
+    this.boardEl.addEventListener('pointerdown', () => this.toggleBoard(false));
+  }
+
+  toggleBoard(open = this.boardEl.hidden) {
+    this.boardEl.hidden = !open;
+    if (open && this.match) this.renderBoard();
+  }
+
+  renderBoard() {
+    const m = this.match;
+    const rows = (team) => m.combatants.filter((c) => c.team === team)
+      .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
+      .map((c) => `<tr class="${c.isPlayer ? 'me' : ''}${c.dead ? ' dead' : ''}"><td>${c.name}</td><td>${c.char?.cls || ''}</td><td>${c.kills}</td><td>${c.deaths}</td></tr>`).join('');
+    this.boardEl.innerHTML = `<div class="sb-inner">
+      <div class="rs-score"><span class="tA">${m.score.A}</span> : <span class="tB">${m.score.B}</span> <small>목표 ${this.rules.scoreLimit}</small></div>
+      <div class="rs-tables">${['A', 'B'].map((t) => `<table><tr><th class="t${t}">${TEAM_NAME[t]}</th><th>클래스</th><th>킬</th><th>데스</th></tr>${rows(t)}</table>`).join('')}</div>
+      <small>아무 곳이나 눌러 닫기</small></div>`;
   }
 
   update(dt, match, player) {
+    this.match = match;
+    if (!this.boardEl.hidden && (this.boardT = (this.boardT || 0) - dt) <= 0) { this.boardT = 0.5; this.renderBoard(); }
     this.top.querySelector('.sa').textContent = match.score.A;
     this.top.querySelector('.sb').textContent = match.score.B;
     const t = this.top.querySelector('b');

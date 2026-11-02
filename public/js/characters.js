@@ -12,12 +12,14 @@ const KEY = 'ss-chars-v1';
 
 const BASE = {
   leo: {
+    voice: { pitch: 1.0, rate: 1.1 },
     name: '레오', cls: '돌격병', weapon: 'AR', look: 'helmet', color: 0xe4574b, accent: 0x4f7f3f,
     desc: '균형 잡힌 기본형. 어느 거리에서도 무난하게 싸웁니다.',
     speed: 1.0, hp: 100, height: 1.0, width: 1.0, head: 1.0, hitbox: 1.0,
     passive: { text: '재장전 15% 빠름', reload: 0.85 },
   },
   mina: {
+    voice: { pitch: 1.5, rate: 1.2 },
     name: '미나', cls: '정찰병', weapon: 'SMG', look: 'cap', color: 0x2fb5a3, accent: 0xffd23f,
     desc: '작고 빠른 정찰병. 맞히기 어렵지만 오래 버티지 못합니다.',
     // 판정을 살짝 키워(1.04) 작은 체구의 이점을 줄이고, 체력 80 = AR 몸통 4발 구간 유지
@@ -25,6 +27,7 @@ const BASE = {
     passive: { text: '정조준 전환 20% 빠름', ads: 0.8 },
   },
   bruno: {
+    voice: { pitch: 0.55, rate: 0.95 },
     name: '브루노', cls: '중화기병', weapon: 'SG', look: 'beanie', color: 0x7a5cc7, accent: 0x8b2f2f,
     desc: '덩치 큰 돌파 담당. 판정이 크고 느린 대신 체력이 높습니다.',
     // 모델은 크지만 판정은 0.9로 줄여 "큰 몸 = 무조건 손해"가 되지 않게 함
@@ -32,12 +35,14 @@ const BASE = {
     passive: { text: '반동 15% 감소', recoil: 0.85 },
   },
   yuki: {
+    voice: { pitch: 1.3, rate: 1.0 },
     name: '유키', cls: '저격병', weapon: 'SR', look: 'hood', color: 0x3d6fd6, accent: 0xe8ecf5,
     desc: '조용한 저격수. 정조준한 채 움직여도 조준이 덜 흔들립니다.',
     speed: 0.96, hp: 95, height: 0.98, width: 0.92, head: 0.95, hitbox: 1.0,
     passive: { text: '정조준 이동 탄퍼짐 40% 감소', adsMove: 0.6 },
   },
   spark: {
+    voice: { pitch: 1.2, rate: 1.35 },
     name: '스파크', cls: '기동병', weapon: 'SMG', look: 'goggles', color: 0xf0a531, accent: 0x2a2d36,
     desc: '측면 침투 전문. 앉은 채로도 빠르게 움직여 낮은 엄폐물을 타고 우회합니다.',
     speed: 1.04, hp: 90, height: 0.95, width: 0.95, head: 1.05, hitbox: 1.0,

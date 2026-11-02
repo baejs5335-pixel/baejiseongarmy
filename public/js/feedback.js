@@ -44,6 +44,19 @@ export class Feedback {
     try { navigator.vibrate(pat); } catch { /* 미지원 */ }
   }
 
+  // 소리 방향 표시: rel = 소리 방향 (플레이어 정면 기준 라디안, +면 왼쪽), kind = step | shot
+  soundPing(rel, kind, strength) {
+    if (!cfg.soundViz) return;
+    const host = this.viz ||= document.getElementById('soundviz');
+    const el = document.createElement('i');
+    el.className = kind;
+    el.dataset.life = kind === 'shot' ? 0.9 : 0.6;
+    el.style.transform = `rotate(${-rel}rad)`;
+    el.style.setProperty('--a', Math.min(1, 0.35 + strength));
+    host.appendChild(el);
+    while (host.children.length > 12) host.firstChild.remove();
+  }
+
   restart(el, ...cls) {
     el.classList.remove('show', 'head', 'kill');
     void el.offsetWidth; // 애니메이션 재시작
@@ -100,6 +113,15 @@ export class Feedback {
       const pop = n.t < 0.08 ? 1.5 - n.t / 0.08 * 0.5 : 1;
       n.el.style.transform = `translate(${x}px, ${y}px) translate(-50%,-50%) scale(${pop})`;
       n.el.style.opacity = String(Math.min(1, (0.75 - n.t) / 0.25));
+    }
+
+    if (this.viz) {
+      for (const el of [...this.viz.children]) {
+        const life = +el.dataset.life - dt;
+        el.dataset.life = life;
+        el.style.opacity = String(Math.max(0, Math.min(1, life * 2)) * el.style.getPropertyValue('--a'));
+        if (life <= 0) el.remove();
+      }
     }
 
     const a = s.assist;

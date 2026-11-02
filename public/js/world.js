@@ -327,9 +327,20 @@ export class World {
     return this.boxes.some((b) => x > b.min.x - pad && x < b.max.x + pad && z > b.min.z - pad && z < b.max.z + pad);
   }
 
-  // 원(플레이어) vs AABB 밀어내기
-  collide(pos, r) {
+  // 발 높이에서 설 수 있는 바닥 높이 (낮은 엄폐물 위에 올라섰을 때)
+  groundAt(x, z, feetY, r = 0.2) {
+    let g = 0;
     for (const b of this.boxes) {
+      if (b.max.y > feetY + 0.05 || b.max.y <= g) continue;
+      if (x > b.min.x - r && x < b.max.x + r && z > b.min.z - r && z < b.max.z + r) g = b.max.y;
+    }
+    return g;
+  }
+
+  // 원(플레이어) vs AABB 밀어내기. 발이 상자 위에 있으면 그 상자는 통과
+  collide(pos, r, feetY = 0) {
+    for (const b of this.boxes) {
+      if (b.max.y <= feetY + 0.05) continue;
       const cx = Math.min(Math.max(pos.x, b.min.x), b.max.x);
       const cz = Math.min(Math.max(pos.z, b.min.z), b.max.z);
       const dx = pos.x - cx, dz = pos.z - cz;

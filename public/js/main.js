@@ -16,6 +16,10 @@ import { urlState, rulesFor, gotoMode } from './modes.js';
 import { NavGrid } from './nav.js';
 import { PlayerUnit, Match, meleeStrike } from './combat.js';
 import { ModeSelect, MatchHud } from './modeui.js';
+import { Voice, ANNOUNCER } from './voice.js';
+import { Minimap } from './minimap.js';
+import { Layout } from './layout.js';
+import { surfaceAt } from './maps.js';
 
 const DEG = Math.PI / 180;
 const BASE_FOV = 65;   // 세로 FOV
@@ -57,10 +61,17 @@ const fx = new Feedback(camera, sfx);
 const vm = new Viewmodel(camera);
 const input = new Input();
 const assist = new AimAssist();
+const voice = new Voice();
+const minimap = new Minimap(MAP);
+const layout = new Layout(input, () => input.applyConfig());
+// 내 캐릭터 목소리 / 아군 AI 목소리
+const me = () => ({ name: CH.name, team: 'A', voice: CH.voice });
+const speakerOf = (c) => (c.isPlayer ? me() : { name: c.name, team: c.team, voice: c.char.voice });
 
 // ── 상태 ──────────────────────────────────
 const spawn = MAP.spawns.A[2];
-const P = { pos: new THREE.Vector3(spawn.x, 0, spawn.z), vel: new THREE.Vector3(), yaw: spawn.yaw, pitch: 0, recoilDebt: 0, bob: 0 };
+// pos.y = 발 높이 (점프 / 낮은 엄폐물 위)
+const P = { pos: new THREE.Vector3(spawn.x, 0, spawn.z), vel: new THREE.Vector3(), vy: 0, grounded: true, yaw: spawn.yaw, pitch: 0, recoilDebt: 0, bob: 0, stepDist: 0, landDip: 0 };
 const S = {
   wKey: 'AR', ammo: {}, reserve: {}, modeIdx: {}, scopeIdx: {},
   reloadT: 0, reloadDur: 0, cooldown: 0, fireBuffer: 0, lastShot: -9, shotIdx: 0, burstLeft: 0,
@@ -94,11 +105,39 @@ if (isMatch) {
   mhud = new MatchHud(rules);
   match = new Match({
     world, nav, map: MAP, rules, sfx, player,
-    onKill: (killer, victim, w, head, back) => mhud.feed(killer, victim, w, head, back),
-    onEnd: (winner) => mhud.result(winner, match, () => gotoMode(URL_STATE.mode), () => {
-      mhud.resultEl.hidden = true;
-      modeSelect.toggle(true);
-    }),
+    onKill: (killer, victim, w, head, back) => {
+      mhud.feed(killer, victim, w, head, back);
+      if (killer === player && victim !== player) onPlayerKill(w, head, back);
+      if (victim.team === 'A' && !victim.isPlayer) {
+        const ally = match.combatants.find((c) => c.team === 'A' && !c.dead && !c.isPlayer);
+        if (ally) voice.say('allyDown', speakerOf(ally), { cooldown: 8 });
+      }
+    },
+    onEnd: (winner) => {
+      voice.say(winner === 'A' ? 'win' : winner === 'B' ? 'lose' : 'draw', ANNOUNCER, { priority: true });
+      mhud.result(winner, match, () => gotoMode(URL_STATE.mode), () => {
+        mhud.resultEl.hidden = true;
+        modeSelect.toggle(true);
+      });
+    },
+    hooks: {
+      // 적 발소리는 크게, 아군은 작게. 벽 너머는 먹먹하게. 방향은 화면 링에도 표시
+      step: (s) => {
+        const d = Math.hypot(s.pos.x - P.pos.x, s.pos.z - P.pos.z);
+        if (d > 35) return;
+        const enemy = s.team !== 'A';
+        const pos = { x: s.pos.x, y: 0.1, z: s.pos.z };
+        sfx.footstep(pos, { surface: surfaceAt(s.pos.x, s.pos.z), gain: enemy ? cfg.enemyStepVol : cfg.allyStepVol, occluded: occluded(pos) });
+        if (enemy) fx.soundPing(relAngle(s.pos), 'step', 1 - d / 35);
+      },
+      shot: (s, w) => {
+        const pos = { x: s.pos.x, y: 1.4, z: s.pos.z };
+        const d = Math.hypot(s.pos.x - P.pos.x, s.pos.z - P.pos.z);
+        sfx.shotAt(w, pos, occluded(pos), s.team === 'A' ? 0.75 : 1);
+        if (s.team !== 'A' && d < 80) fx.soundPing(relAngle(s.pos), 'shot', 1 - d / 80);
+      },
+      spotted: (s) => { if (s.team === 'A') voice.say('spotted', speakerOf(s), { cooldown: 6 }); },
+    },
   });
   // 피격: 빨간 화면 + 공격자 방향 표시 + 진동
   player.onHurt = (d, attacker) => {
@@ -110,10 +149,13 @@ if (isMatch) {
     mhud.hurt(d, rel);
     sfx.hurt();
     fx.vibrate([18, 25, 18]);
+    if (player.hp > 0 && player.hp / player.maxHp < 0.35) voice.say('lowhp', me(), { cooldown: 10 });
   };
   player.onSpawn = (sp) => {
+    if (match.state === 'play' && player.deaths > 0) voice.say('respawn', me(), { cooldown: 8 });
     P.pos.set(sp.x, 0, sp.z);
     P.vel.set(0, 0, 0);
+    P.vy = 0;
     P.yaw = sp.yaw;
     P.pitch = 0;
     P.recoilDebt = 0;
@@ -123,18 +165,37 @@ if (isMatch) {
 }
 const combatants = () => (match ? match.combatants : world.bots);
 
+// 소리 위치 → 화면 기준 방향 / 가림 여부
+const listenerPos = new THREE.Vector3();
+function relAngle(pos) { return Math.atan2(-(pos.x - P.pos.x), -(pos.z - P.pos.z)) - P.yaw; }
+function occluded(pos) {
+  return cfg.occlusion && world.blocked(listenerPos, new THREE.Vector3(pos.x, Math.max(pos.y, 1), pos.z));
+}
+
+// 내가 처치: 보이스 + 연속 킬 아나운서
+const multi = { n: 0, t: -9 };
+function onPlayerKill(w, head, back) {
+  multi.n = S.time - multi.t < 4 ? multi.n + 1 : 1;
+  multi.t = S.time;
+  if (multi.n >= 2) voice.say(`multi${Math.min(4, multi.n)}`, ANNOUNCER, { cooldown: 0.5, priority: true });
+  else voice.say(w.melee ? 'knife' : head ? 'headshot' : 'kill', me(), { cooldown: 2.5 });
+}
+
 const mapView = new MapView(MAP, world, isMatch ? null : (x, z) => { P.pos.set(x, 0, z); P.vel.set(0, 0, 0); });
-new Tuning(() => input.applyConfig(), () => {
+const tuning = new Tuning(() => input.applyConfig(), () => {
   // 무기 밸런스 패널에서 탄창 크기를 줄였을 때 현재 탄약 정리
   for (const k of WEAPON_ORDER) S.ammo[k] = Math.min(S.ammo[k], WEAPONS[k].mag);
-}, () => world.rebuildBots());
+}, () => world.rebuildBots(), {
+  onEditHud: () => { tuning.toggle(false); layout.openEditor(); },
+  onVoiceTest: (key) => voice.say(key, ['start', 'multi2'].includes(key) ? ANNOUNCER : me(), { cooldown: 0, priority: true }),
+});
 
 const charSelect = new CharSelect((id) => {
   CH = CHARACTERS[id];
   switchWeapon(allowed.includes(CH.weapon) ? CH.weapon : allowed[0]);
   if (match) {
     player.setChar(CH);
-    if (match.state === 'idle') match.start();
+    if (match.state === 'idle') { match.start(); voice.say('start', ANNOUNCER, { priority: true }); }
   }
   requestFullscreen();
 });
@@ -182,7 +243,12 @@ function startReload() {
   S.reloadT = S.reloadDur = (S.ammo[S.wKey] > 0 ? w.reloadTac : w.reloadEmpty) * passive('reload');
   S.burstLeft = 0;
   S.ads = false;
-  sfx.reload();
+  // 탄창 분리 → 결합 → (빈 탄창이면) 노리쇠
+  const empty = S.ammo[S.wKey] === 0;
+  S.reloadSteps = [[0.12, 'out'], [0.62, 'in'], ...(empty ? [[0.86, 'bolt']] : [])];
+  sfx.reloadStep('out');
+  S.reloadSteps.shift();
+  voice.say('reload', me(), { cooldown: 5 });
 }
 
 function finishReload() {
@@ -204,7 +270,8 @@ function breakInvuln() {
 function spreadDeg(w, adsE, speedFrac, crouchE) {
   const base = lerp(w.hip.base, w.ads.base, adsE);
   const move = lerp(w.hip.move, w.ads.move * passive('adsMove'), adsE) * Math.min(1, speedFrac);
-  return (base + move + S.bloom) * lerp(1, w.crouchMul, crouchE);
+  const air = P.grounded ? 0 : lerp(3, 1.5, adsE); // 점프 중 사격 페널티
+  return (base + move + S.bloom + air) * lerp(1, w.crouchMul, crouchE);
 }
 
 // 원뿔 안의 무작위 방향 (균일 원판 분포)
@@ -225,7 +292,7 @@ function shoot(w, adsE, speedFrac, crouchE) {
   S.shots++;
   breakInvuln();
 
-  eye.set(P.pos.x, S.eyeH, P.pos.z);
+  eye.set(P.pos.x, P.pos.y + S.eyeH, P.pos.z);
   aimE.set(P.pitch, P.yaw, 0);
   aimQ.setFromEuler(aimE);
   const center = coneDir(new THREE.Vector3(), aimQ, spreadDeg(w, adsE, speedFrac, crouchE) * DEG);
@@ -258,6 +325,7 @@ function shoot(w, adsE, speedFrac, crouchE) {
   vm.fire(w, cfg.muzzleFlash);
   sfx.shot(w);
   fx.vibrate(w.vib);
+  match?.hear(P.pos, 45, player);
 }
 
 // 칼: 휘두르기 시작 → windup 후 판정
@@ -276,7 +344,7 @@ function resolveMelee() {
   S.melee = null;
   S.shots++;
   const r = meleeStrike(player || { team: 'A' }, combatants(), world, {
-    pos: P.pos, yaw: P.yaw, eyeY: S.eyeH, team: 'A',
+    pos: P.pos, yaw: P.yaw, eyeY: P.pos.y + S.eyeH, team: 'A',
     range: m.range, angle: m.angle, dmg: m.dmg * dmgMul, backMul: w.backMul,
   });
   if (!r) return;
@@ -287,7 +355,8 @@ function resolveMelee() {
   fx.hit({ dmg: r.dmg, head: r.back, kill: r.killed, point: r.point }, w);
   if (r.killed) {
     S.kills++;
-    match?.onKill(player, r.victim, w, false, r.back);
+    if (match) match.onKill(player, r.victim, w, false, r.back);
+    else onPlayerKill(w, false, r.back);
   }
 }
 
@@ -314,7 +383,7 @@ function flushHits() {
   for (const s of pendingShots) {
     if (!s.hitCounted) { S.hits++; s.hitCounted = true; }
     if (s.head && !s.headCounted) { S.heads++; s.headCounted = true; }
-    if (s.kill) S.kills++;
+    if (s.kill) { S.kills++; if (!match) onPlayerKill(s.w, s.head, false); }
     fx.hit({ dmg: s.dmg, head: s.head, kill: s.kill, point: s.point }, s.w);
     s.dmg = 0; s.head = false; s.kill = false; s.point = null;
   }
@@ -381,6 +450,8 @@ function frame(now) {
   if (press.has('map')) mapView.toggle();
   if (press.has('char')) charSelect.toggle(true);
   if (press.has('modes')) modeSelect.toggle(true);
+  if (press.has('score')) mhud?.toggleBoard();
+  hud.stats.hidden = !cfg.showStats;
   if (world.hitboxVisible !== cfg.showHitboxes) world.setHitboxVisible(cfg.showHitboxes);
   if (press.has('crouch')) S.crouch = !S.crouch;
   if (press.has('mode') && w.modes.length > 1) {
@@ -398,7 +469,7 @@ function frame(now) {
   const eyeStand = standEye();
   S.eyeH = lerp(eyeStand, eyeStand * CROUCH_EYE_K, crouchE);
 
-  eye.set(P.pos.x, S.eyeH, P.pos.z);
+  eye.set(P.pos.x, P.pos.y + S.eyeH, P.pos.z);
   const a = assist.update(eye, P.yaw, P.pitch, world, cfg, combatants());
 
   S.cooldown -= dt;
@@ -420,6 +491,8 @@ function frame(now) {
 
   if (S.reloadT > 0) {
     S.reloadT -= dt;
+    const frac = 1 - S.reloadT / S.reloadDur;
+    while (S.reloadSteps?.length && frac >= S.reloadSteps[0][0]) sfx.reloadStep(S.reloadSteps.shift()[1]);
     if (S.reloadT <= 0) finishReload();
   }
 
@@ -457,9 +530,39 @@ function frame(now) {
   P.vel.z += (tz - P.vel.z) * acc;
   P.pos.x += P.vel.x * dt;
   P.pos.z += P.vel.z * dt;
-  world.collide(P.pos, PLAYER_R);
-  const speedFrac = Math.hypot(P.vel.x, P.vel.z) / baseSpeed;
-  P.bob += Math.hypot(P.vel.x, P.vel.z) * dt * 1.9;
+  world.collide(P.pos, PLAYER_R, P.pos.y);
+  // 점프 (낮은 엄폐물 1.05m 위로 올라갈 수 있는 높이)
+  if (press.has('jump') && P.grounded) { P.vy = 5.4; P.grounded = false; S.crouch = false; }
+  const prevY = P.pos.y;
+  P.vy -= 13 * dt;
+  P.pos.y += P.vy * dt;
+  const ground = world.groundAt(P.pos.x, P.pos.z, prevY);
+  if (P.pos.y <= ground) {
+    if (!P.grounded && P.vy < -2) {
+      sfx.land(surfaceAt(P.pos.x, P.pos.z));
+      P.landDip = Math.min(0.12, -P.vy * 0.016);
+      S.trauma = Math.min(1, S.trauma + 0.06);
+      match?.hear(P.pos, 16, player);
+    }
+    P.pos.y = ground;
+    P.vy = 0;
+    P.grounded = true;
+  } else P.grounded = false;
+  P.landDip *= Math.exp(-dt * 10);
+  const hSpeed = Math.hypot(P.vel.x, P.vel.z);
+  const speedFrac = hSpeed / baseSpeed;
+  P.bob += hSpeed * dt * 1.9;
+  // 내 발소리 (앉아서 걸으면 무음 → 적 AI도 못 들음)
+  if (P.grounded && hSpeed > 0.6) {
+    P.stepDist += hSpeed * dt;
+    if (P.stepDist > 1.9) {
+      P.stepDist = 0;
+      if (crouchE < 0.5) {
+        sfx.footstep(null, { surface: surfaceAt(P.pos.x, P.pos.z), gain: cfg.ownStepVol });
+        match?.hear(P.pos, 16, player);
+      }
+    }
+  }
 
   // 사격: 연사 = 누르는 동안, 단발/점사 = 누를 때마다 (0.15초 입력 버퍼)
   const mode = curMode();
@@ -512,23 +615,39 @@ function frame(now) {
   if (dead) {
     // 사망 카메라: 위로 떠오르며 나를 처치한 적을 바라봄
     player.deathT = (player.deathT || 0) + dt;
-    camera.position.set(P.pos.x, S.eyeH + Math.min(1.6, player.deathT * 2), P.pos.z + Math.min(1.2, player.deathT * 1.5));
+    camera.position.set(P.pos.x, P.pos.y + S.eyeH + Math.min(1.6, player.deathT * 2), P.pos.z + Math.min(1.2, player.deathT * 1.5));
     const kpos = player.killer?.pos;
     if (kpos && player.killer !== player) camera.lookAt(kpos.x, 1.2, kpos.z);
     else camera.rotation.set(-0.6, P.yaw, 0);
   } else {
     if (player) player.deathT = 0;
-    camera.position.set(P.pos.x, S.eyeH + Math.sin(P.bob * 2) * 0.03 * bobA, P.pos.z);
+    camera.position.set(P.pos.x, P.pos.y + S.eyeH - P.landDip + Math.sin(P.bob * 2) * 0.03 * bobA, P.pos.z);
     camera.rotation.set(P.pitch + noise(nt, 1) * 2.2 * DEG * sh, P.yaw + noise(nt, 2) * 2.2 * DEG * sh, noise(nt, 3) * 3 * DEG * sh);
   }
   const fov = lerp(BASE_FOV, zoomFov(scope.zoom), adsE) + S.fovPunch * cfg.fovPunch;
   if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
   camera.updateMatrixWorld();
+  listenerPos.copy(camera.position);
+  sfx.setListener(listenerPos, camera.getWorldDirection(tmpDir));
+  if (match && match.state === 'play') {
+    // 내 시야(±40°, 70m)에 적이 새로 들어오면 "적 발견!"
+    S.spotT = (S.spotT || 0) - dt;
+    if (S.spotT <= 0 && !dead) {
+      S.spotT = 0.3;
+      const seeing = match.combatants.some((c) => c.team === 'B' && !c.dead
+        && Math.hypot(c.pos.x - P.pos.x, c.pos.z - P.pos.z) < 70
+        && Math.abs(Math.atan2(Math.sin(relAngle(c.pos)), Math.cos(relAngle(c.pos)))) < 40 * DEG
+        && !world.blocked(listenerPos, new THREE.Vector3(c.pos.x, c.chestY, c.pos.z)));
+      if (seeing && !S.seeing) voice.say('spotted', me(), { cooldown: 6 });
+      S.seeing = seeing;
+    }
+    if (match.time <= 10 && !S.tenSaid) { S.tenSaid = true; voice.say('tenSec', ANNOUNCER, { priority: true }); }
+  }
 
   // 십자선이 적 위에 있는지 (빨간 십자선 / 자동 사격)
   aimE.set(P.pitch, P.yaw, 0);
   tmpDir.set(0, 0, -1).applyEuler(aimE);
-  const ch = world.raycast(eye.set(P.pos.x, S.eyeH, P.pos.z), tmpDir, w.melee ? WEAPONS.KN.slash.range + 0.4 : 150, 'A');
+  const ch = world.raycast(eye.set(P.pos.x, P.pos.y + S.eyeH, P.pos.z), tmpDir, w.melee ? WEAPONS.KN.slash.range + 0.4 : 150, 'A');
   S.onTarget = !!(ch && ch.object.userData.bot);
 
   if (match) {
@@ -547,6 +666,7 @@ function frame(now) {
   updateHud(dt, w, a);
   if (mhud) mhud.update(dt, match, player);
   mapView.draw(P, S.eyeH, combatants());
+  minimap.draw(P, combatants(), match ? match.now : 0, !match);
 
   renderer.render(scene, camera);
 }
@@ -575,4 +695,4 @@ $('#start-btn').addEventListener('click', () => {
 });
 
 // 디버그용
-window.__game = { P, S, world, cfg, WEAPONS, mapView, charSelect, modeSelect, rules, get match() { return match; }, get player() { return player; }, get CH() { return CH; } };
+window.__game = { P, S, world, cfg, WEAPONS, mapView, charSelect, modeSelect, rules, sfx, voice, layout, get match() { return match; }, get player() { return player; }, get CH() { return CH; } };

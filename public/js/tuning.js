@@ -2,6 +2,7 @@
 import { config, SCHEMA, PRESETS, save, applyPreset, diffFromDefaults } from './config.js';
 import { WEAPONS, GUN_ORDER, EDITABLE, MODE_NAMES, getP, setP, saveWeapons, resetWeapon, damageAt } from './weapons.js';
 
+import { LINE_LABELS } from './voice.js';
 import { CHARACTERS, CHAR_ORDER, CHAR_EDITABLE, saveCharacters, resetCharacter, balance } from './characters.js';
 
 const TTK_DIST = [5, 15, 30, 50, 80];
@@ -9,7 +10,9 @@ const TTK_DIST = [5, 15, 30, 50, 80];
 const decimals = (step) => (step >= 1 ? 0 : String(step).split('.')[1].length);
 
 export class Tuning {
-  constructor(onChange, onWeaponChange, onCharChange) {
+  // extra: { onEditHud(), onVoiceTest(key) }
+  constructor(onChange, onWeaponChange, onCharChange, extra = {}) {
+    this.extra = extra;
     this.onChange = onChange;
     this.onWeaponChange = onWeaponChange;
     this.onCharChange = onCharChange;
@@ -30,12 +33,13 @@ export class Tuning {
   build() {
     const p = this.panel;
     p.innerHTML = `
-      <div class="tn-head"><b>⚙ 튜닝</b><button data-close>닫기</button></div>
+      <div class="tn-head"><b>⚙ 튜닝</b><span><button data-hud>🖐 HUD 편집</button> <button data-close>닫기</button></span></div>
       <div class="tn-tabs"><button data-tab="feel" class="on">조작 · 타격감</button><button data-tab="weapon">무기</button><button data-tab="char">캐릭터</button></div>
       <div data-pane="feel"></div>
       <div data-pane="weapon" hidden></div>
       <div data-pane="char" hidden></div>`;
     p.querySelector('[data-close]').addEventListener('click', () => this.toggle(false));
+    p.querySelector('[data-hud]').addEventListener('click', () => this.extra.onEditHud?.());
     p.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {
       p.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x === b));
       p.querySelectorAll('[data-pane]').forEach((x) => { x.hidden = x.dataset.pane !== b.dataset.tab; });
@@ -104,6 +108,10 @@ export class Tuning {
       pane.appendChild(h);
       for (const it of sec.items) pane.appendChild(this.row(it));
     }
+    const vt = document.createElement('div');
+    vt.innerHTML = `<h3>보이스 미리 듣기</h3><div class="tn-presets">${Object.entries(LINE_LABELS).map(([k, v]) => `<button data-voice="${k}">${v}</button>`).join('')}</div>`;
+    vt.querySelectorAll('[data-voice]').forEach((b) => b.addEventListener('click', () => this.extra.onVoiceTest?.(b.dataset.voice)));
+    pane.appendChild(vt);
     const foot = document.createElement('div');
     foot.innerHTML = `<div class="tn-foot"><button data-preset="기본">전체 초기화</button><button data-copy>변경값 복사 (JSON)</button></div><textarea readonly hidden></textarea>`;
     pane.appendChild(foot);

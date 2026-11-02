@@ -12,6 +12,18 @@
 <title>스페셜 솔져 · 조작감 테스트</title>
 <link rel="stylesheet" href="css/style.css">
 <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>
+<script>
+// 카카오톡·네이버·인스타 등 앱 안 브라우저는 홈 화면 추가/전체 화면이 안 됨 → 외부 브라우저로 넘김
+(function () {
+  var ua = navigator.userAgent, url = location.href;
+  var android = /Android/i.test(ua);
+  if (/KAKAOTALK/i.test(ua)) { location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(url); return; }
+  if (/NAVER\(|Instagram|FBAN|FBAV|FB_IAB|Line\/|DaumApps|everytimeApp|BAND\//i.test(ua)) {
+    if (android) { location.href = 'intent://' + url.replace(/^https?:\/\//, '') + '#Intent;scheme=https;package=com.android.chrome;end'; return; }
+    window.__inApp = true; // 아이폰: 자동으로 못 넘기므로 안내 화면
+  }
+})();
+</script>
 </head>
 <body>
 <canvas id="game"></canvas>
@@ -102,10 +114,18 @@
 <div id="ios-guide" hidden>
   <div class="ig-card">
     <h2>📲 전체 화면으로 플레이하기</h2>
+    <div class="ig-inapp" hidden>
+      <p><b>지금은 앱 안의 브라우저</b>(카카오톡·네이버·인스타 등)라서 홈 화면 추가와 전체 화면이 안 돼요.</p>
+      <ol>
+        <li>화면 오른쪽 위(또는 아래)의 <b>⋯ / 공유</b> 버튼을 누르세요</li>
+        <li><b>Safari로 열기</b> (또는 "다른 브라우저로 열기")를 누르세요</li>
+        <li>Safari에서 아래 방법으로 홈 화면에 추가하세요</li>
+      </ol>
+    </div>
     <p>아이폰은 브라우저에서 전체 화면을 지원하지 않아 주소창·도구 막대가 화면을 가려요.<br>홈 화면에 추가하면 <b>앱처럼 전체 화면</b>으로 실행됩니다.</p>
     <ol>
-      <li>Safari 아래(또는 위)의 <b>공유 버튼</b> <span class="ig-icon">⬆︎</span> 을 누르세요</li>
-      <li>목록에서 <b>홈 화면에 추가</b>를 누르세요</li>
+      <li><b>Safari</b>에서 아래(또는 주소창 옆)의 <b>공유 버튼</b> <span class="ig-icon">⬆︎</span> 을 누르세요<br><small>크롬이면 주소창 오른쪽의 공유 버튼</small></li>
+      <li>나온 목록을 <b>위로 끌어올리면</b> 아래쪽에 <b>홈 화면에 추가</b>가 있어요<br><small>그래도 없으면 목록 맨 아래 "작업 편집…"에서 추가</small></li>
       <li>홈 화면의 <b>스페셜 솔져</b> 아이콘으로 실행하세요</li>
     </ol>
     <div class="ig-btns"><button data-close>브라우저에서 계속</button><button data-close data-never>다시 보지 않기</button></div>

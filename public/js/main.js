@@ -761,14 +761,20 @@ document.querySelectorAll('#hud .btn').forEach((b) => b.addEventListener('pointe
   const hint = $('#install-hint');
   if (touchDevice && !standalone) {
     hint.hidden = false;
-    hint.innerHTML = canFullscreen
-      ? '📲 화면을 탭하면 전체 화면이 됩니다. 브라우저 메뉴(⋮) → <b>홈 화면에 추가</b>로 설치하면 아이콘으로 바로 전체 화면 실행돼요.'
-      : '📲 아이폰은 브라우저에서 전체 화면이 지원되지 않아요. <b>홈 화면에 추가</b>해서 실행해 주세요.';
+    const samsung = /SamsungBrowser/i.test(navigator.userAgent);
+    hint.innerHTML = window.__inApp
+      ? '📲 앱 안의 브라우저에서는 전체 화면이 안 돼요. ⋯ 메뉴 → <b>다른 브라우저로 열기</b>를 눌러 주세요.'
+      : canFullscreen
+        ? (samsung
+          ? '📲 화면을 탭하면 전체 화면이 됩니다. 아래 메뉴(≡) → <b>현재 페이지 추가 → 홈 화면</b>으로 설치하면 아이콘으로 바로 실행돼요.'
+          : '📲 화면을 탭하면 전체 화면이 됩니다. 오른쪽 위 메뉴(⋮) → <b>홈 화면에 추가</b>(또는 <b>앱 설치</b>)로 설치하면 아이콘으로 바로 실행돼요.')
+        : '📲 아이폰은 브라우저에서 전체 화면이 지원되지 않아요. <b>홈 화면에 추가</b>해서 실행해 주세요. (☰ → 전체 화면에서 방법 보기)';
   }
   // 아이폰 브라우저 첫 접속: 설치 방법 단계 안내
   let seen = false;
   try { seen = localStorage.getItem('ss-ios-guide') === '1'; } catch { /* 무시 */ }
-  if (isIOS && !standalone && !seen && !URL_STATE.go) $('#ios-guide').hidden = false;
+  if (window.__inApp) $('#ios-guide .ig-inapp').hidden = false;
+  if ((isIOS || window.__inApp) && !standalone && (!seen || window.__inApp) && !URL_STATE.go) $('#ios-guide').hidden = false;
   $('#ios-guide').addEventListener('click', (e) => {
     if (!e.target.closest('[data-close]')) return;
     if (e.target.closest('[data-never]')) { try { localStorage.setItem('ss-ios-guide', '1'); } catch { /* 무시 */ } }

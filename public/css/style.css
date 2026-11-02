@@ -609,3 +609,11 @@ button { touch-action: manipulation; }
 /* 사격 모드·조준경 버튼: 탄약 위 가로 배치 (작은 화면에서 조준 버튼과 겹치지 않게) */
 #gun-opts { left: 50%; transform: translateX(-50%); bottom: 104px; flex-direction: row; }
 #voice-sub { bottom: 146px; }
+
+/* ── 확대 방지 ─────────────────────────
+   double-tap 확대는 touch-action이 auto인 곳에서만 일어남 → 전부 manipulation 이하로.
+   게임 화면은 none(핀치 확대까지 차단), 메뉴 스크롤 영역은 pan-y(세로 스크롤만) 유지 */
+*, *::before, *::after { touch-action: manipulation; }
+html, body, #game, #touch-layer, #hud, #hud *, .btn, #joy-base, #joy-knob, #layout-editor, #layout-editor * { touch-action: none; }
+#tuning, .lb-body, .ms-info, .cs-info, .ms-list, .cs-list, .mv-side, #tuning * { touch-action: pan-y; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }

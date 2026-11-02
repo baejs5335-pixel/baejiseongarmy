@@ -49,6 +49,19 @@ const noise = (t, s) => Math.sin(t + s * 13.1) * 0.5 + Math.sin(t * 2.3 + s * 7.
 // 배율 → 세로 FOV
 const zoomFov = (zoom) => 2 * Math.atan(Math.tan(BASE_FOV * DEG / 2) / zoom) / DEG;
 
+// ── 확대 방지 (아이폰 Safari는 viewport의 user-scalable=no를 무시함) ──
+// 1) 핀치 확대 제스처 차단  2) 0.35초 안의 두 번째 탭은 기본 동작(더블탭 확대) 취소
+//    게임 조작은 pointer 이벤트라 영향 없음
+for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
+document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
+let lastTouchEnd = 0;
+document.addEventListener('touchend', (e) => {
+  const now = performance.now();
+  if (now - lastTouchEnd < 350 && !e.target.closest?.('input, textarea, select')) e.preventDefault();
+  lastTouchEnd = now;
+}, { passive: false });
+document.addEventListener('touchmove', (e) => { if (e.scale && e.scale !== 1) e.preventDefault(); }, { passive: false });
+
 // ── 렌더러 / 씬 ───────────────────────────
 const renderer = new THREE.WebGLRenderer({ canvas: $('#game'), antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, cfg.renderScale));

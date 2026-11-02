@@ -38,6 +38,7 @@ export class Feedback {
 
   vibrate(p) {
     if (!cfg.vibration || !navigator.vibrate || cfg.vibrationScale <= 0) return;
+    if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return; // 첫 터치 전에는 브라우저가 차단
     const s = cfg.vibrationScale;
     const pat = Array.isArray(p) ? p.map((x) => Math.max(1, Math.round(x * s))) : Math.max(1, Math.round(p * s));
     try { navigator.vibrate(pat); } catch { /* 미지원 */ }

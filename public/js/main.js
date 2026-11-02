@@ -12,11 +12,22 @@ import { Tuning } from './tuning.js';
 import { MapView } from './mapview.js';
 import { CHARACTERS, dims } from './characters.js';
 import { CharSelect, savedCharId } from './charselect.js';
+import { urlState, rulesFor, gotoMode } from './modes.js';
+import { NavGrid } from './nav.js';
+import { PlayerUnit, Match, meleeStrike } from './combat.js';
+import { ModeSelect, MatchHud } from './modeui.js';
 
 const DEG = Math.PI / 180;
 const BASE_FOV = 65;   // 세로 FOV
 const CROUCH_EYE_K = 0.6;
 const PLAYER_R = 0.35;
+
+// 모드 (URL ?mode=...)
+const URL_STATE = urlState();
+const rules = rulesFor(URL_STATE.mode);
+const isMatch = !!rules.match;
+const allowed = rules.weapons || WEAPON_ORDER;
+const dmgMul = rules.dmgMul ?? 1;
 
 // 플레이어 캐릭터 (이동 속도·눈높이·패시브에 반영)
 let CH = CHARACTERS[savedCharId()];
@@ -40,7 +51,7 @@ const camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.03, 250);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
 
-const world = new World(scene, MAP);
+const world = new World(scene, MAP, { targets: !isMatch });
 const sfx = new Sfx();
 const fx = new Feedback(camera, sfx);
 const vm = new Viewmodel(camera);
@@ -53,22 +64,66 @@ const P = { pos: new THREE.Vector3(spawn.x, 0, spawn.z), vel: new THREE.Vector3(
 const S = {
   wKey: 'AR', ammo: {}, reserve: {}, modeIdx: {}, scopeIdx: {},
   reloadT: 0, reloadDur: 0, cooldown: 0, fireBuffer: 0, lastShot: -9, shotIdx: 0, burstLeft: 0,
-  ads: false, adsT: 0, crouch: false, crouchT: 0,
+  ads: false, adsT: 0, crouch: false, crouchT: 0, melee: null,
   bloom: 0, trauma: 0, fovPunch: 0, pendX: 0, pendY: 0, time: 0, eyeH: standEye(),
   shots: 0, hits: 0, heads: 0, kills: 0, onTarget: false,
 };
+function refillAmmo() {
+  for (const k of WEAPON_ORDER) {
+    S.ammo[k] = WEAPONS[k].mag;
+    S.reserve[k] = WEAPONS[k].reserve;
+  }
+}
+refillAmmo();
 for (const k of WEAPON_ORDER) {
   const w = WEAPONS[k];
-  S.ammo[k] = w.mag;
-  S.reserve[k] = w.reserve;
   S.modeIdx[k] = 0;
   S.scopeIdx[k] = w.scopes.indexOf(w.defaultScope);
 }
+document.querySelectorAll('[data-weapon]').forEach((b) => { b.hidden = !allowed.includes(b.dataset.weapon); });
 
 const curScopeKey = () => WEAPONS[S.wKey].scopes[S.scopeIdx[S.wKey]];
 const curMode = () => WEAPONS[S.wKey].modes[S.modeIdx[S.wKey]];
 
-const mapView = new MapView(MAP, world, (x, z) => { P.pos.set(x, 0, z); P.vel.set(0, 0, 0); });
+// ── 매치 ──────────────────────────────────
+const nav = isMatch ? new NavGrid(world, MAP.bounds) : null;
+const player = isMatch ? new PlayerUnit(world, P) : null;
+let match = null, mhud = null;
+if (isMatch) {
+  player.setChar(CH);
+  mhud = new MatchHud(rules);
+  match = new Match({
+    world, nav, map: MAP, rules, sfx, player,
+    onKill: (killer, victim, w, head, back) => mhud.feed(killer, victim, w, head, back),
+    onEnd: (winner) => mhud.result(winner, match, () => gotoMode(URL_STATE.mode), () => {
+      mhud.resultEl.hidden = true;
+      modeSelect.toggle(true);
+    }),
+  });
+  // 피격: 빨간 화면 + 공격자 방향 표시 + 진동
+  player.onHurt = (d, attacker) => {
+    let rel;
+    if (attacker?.pos) {
+      const dx = attacker.pos.x - P.pos.x, dz = attacker.pos.z - P.pos.z;
+      rel = Math.atan2(-dx, -dz) - P.yaw;
+    }
+    mhud.hurt(d, rel);
+    sfx.hurt();
+    fx.vibrate([18, 25, 18]);
+  };
+  player.onSpawn = (sp) => {
+    P.pos.set(sp.x, 0, sp.z);
+    P.vel.set(0, 0, 0);
+    P.yaw = sp.yaw;
+    P.pitch = 0;
+    P.recoilDebt = 0;
+    refillAmmo();
+    Object.assign(S, { reloadT: 0, ads: false, adsT: 0, crouch: false, crouchT: 0, burstLeft: 0, melee: null, bloom: 0 });
+  };
+}
+const combatants = () => (match ? match.combatants : world.bots);
+
+const mapView = new MapView(MAP, world, isMatch ? null : (x, z) => { P.pos.set(x, 0, z); P.vel.set(0, 0, 0); });
 new Tuning(() => input.applyConfig(), () => {
   // 무기 밸런스 패널에서 탄창 크기를 줄였을 때 현재 탄약 정리
   for (const k of WEAPON_ORDER) S.ammo[k] = Math.min(S.ammo[k], WEAPONS[k].mag);
@@ -76,7 +131,16 @@ new Tuning(() => input.applyConfig(), () => {
 
 const charSelect = new CharSelect((id) => {
   CH = CHARACTERS[id];
-  switchWeapon(CH.weapon);
+  switchWeapon(allowed.includes(CH.weapon) ? CH.weapon : allowed[0]);
+  if (match) {
+    player.setChar(CH);
+    if (match.state === 'idle') match.start();
+  }
+  requestFullscreen();
+});
+const modeSelect = new ModeSelect(URL_STATE.mode, (mode) => {
+  if (mode !== URL_STATE.mode || (match && match.state !== 'idle')) gotoMode(mode);
+  else charSelect.toggle(true);
 });
 
 function resize() {
@@ -97,7 +161,7 @@ const pelletQ = new THREE.Quaternion();
 const fwdZ = new THREE.Vector3(0, 0, -1);
 
 function switchWeapon(k) {
-  if (k === S.wKey && vm.cur) return;
+  if (!allowed.includes(k) || (k === S.wKey && vm.cur)) return;
   S.wKey = k;
   S.reloadT = 0;
   S.burstLeft = 0;
@@ -105,13 +169,14 @@ function switchWeapon(k) {
   S.ads = false;
   S.bloom = 0;
   S.shotIdx = 0;
+  S.melee = null;
   vm.setWeapon(k, curScopeKey());
   document.querySelectorAll('[data-weapon]').forEach((b) => b.classList.toggle('on', b.dataset.weapon === k));
 }
 
 function startReload() {
   const w = WEAPONS[S.wKey];
-  if (S.reloadT > 0 || S.ammo[S.wKey] >= w.mag) return;
+  if (w.melee || S.reloadT > 0 || S.ammo[S.wKey] >= w.mag) return;
   if (!cfg.infiniteAmmo && S.reserve[S.wKey] <= 0) return;
   // 탄이 남아 있으면 빠른 장전(약실에 한 발 남음), 비었으면 노리쇠 후퇴까지 포함한 긴 장전
   S.reloadT = S.reloadDur = (S.ammo[S.wKey] > 0 ? w.reloadTac : w.reloadEmpty) * passive('reload');
@@ -128,6 +193,11 @@ function finishReload() {
   if (!cfg.infiniteAmmo) S.reserve[S.wKey] -= take;
   S.reloadT = 0;
   sfx.reloadDone();
+}
+
+// 무적 중 공격하면 무적 해제 (스폰 킬 악용 방지)
+function breakInvuln() {
+  if (player && player.invulnT > 0 && rules.invulnBreak) player.invulnT = 0;
 }
 
 // 현재 탄퍼짐(도): 지향사격 ↔ 정조준 사이를 ADS 진행도로 보간, 앉으면 감소
@@ -153,6 +223,7 @@ function shoot(w, adsE, speedFrac, crouchE) {
   if (S.time - S.lastShot > w.recoil.reset) S.shotIdx = 0;
   S.lastShot = S.time;
   S.shots++;
+  breakInvuln();
 
   eye.set(P.pos.x, S.eyeH, P.pos.z);
   aimE.set(P.pitch, P.yaw, 0);
@@ -161,7 +232,7 @@ function shoot(w, adsE, speedFrac, crouchE) {
   pelletQ.setFromUnitVectors(fwdZ, center);
   const off = vm.muzzleWorld(muzzle).sub(eye);
 
-  const shot = { w, dmg: 0, head: false, kill: false, point: null, hitCounted: false, headCounted: false };
+  const shot = { w, team: 'A', owner: player, mine: true, dmg: 0, head: false, kill: false, point: null, hitCounted: false, headCounted: false };
   const pSpread = w.pelletSpread * lerp(1, w.adsPelletMul || 1, adsE) * DEG;
   for (let i = 0; i < w.pellets; i++) {
     const dir = w.pellets > 1 ? coneDir(tmpDir, pelletQ, pSpread) : center;
@@ -189,19 +260,54 @@ function shoot(w, adsE, speedFrac, crouchE) {
   fx.vibrate(w.vib);
 }
 
+// 칼: 휘두르기 시작 → windup 후 판정
+function startMelee(kind) {
+  const w = WEAPONS.KN, m = w[kind];
+  S.cooldown = kind === 'stab' ? m.cooldown : 60 / w.rpm;
+  S.melee = { kind, t: m.windup };
+  vm.swing(kind);
+  sfx.swing(kind === 'stab');
+  S.trauma = Math.min(1, S.trauma + w.shake * cfg.shakeIntensity);
+  breakInvuln();
+}
+
+function resolveMelee() {
+  const w = WEAPONS.KN, m = w[S.melee.kind];
+  S.melee = null;
+  S.shots++;
+  const r = meleeStrike(player || { team: 'A' }, combatants(), world, {
+    pos: P.pos, yaw: P.yaw, eyeY: S.eyeH, team: 'A',
+    range: m.range, angle: m.angle, dmg: m.dmg * dmgMul, backMul: w.backMul,
+  });
+  if (!r) return;
+  if (!r.applied) { world.impact(r.point, 'shield'); return; }
+  world.impact(r.point, 'flesh');
+  S.hits++;
+  S.fovPunch += 1.2;
+  fx.hit({ dmg: r.dmg, head: r.back, kill: r.killed, point: r.point }, w);
+  if (r.killed) {
+    S.kills++;
+    match?.onKill(player, r.victim, w, false, r.back);
+  }
+}
+
 function onBulletHit(b, h, dist) {
   const ud = h.object.userData;
   const shot = b.shot;
   if (!ud.bot) { world.impact(h.point, 'wall'); return; }
-  const head = ud.part === 'head';
-  const dmg = damageAt(shot.w, dist) * (head ? shot.w.headMul : 1);
-  const r = ud.bot.damage(dmg, ud.part);
-  shot.dmg += dmg;
-  shot.head ||= head;
-  shot.kill ||= r.killed;
-  shot.point ||= h.point.clone();
-  pendingShots.add(shot);
+  const victim = ud.bot, head = ud.part === 'head';
+  const dmg = damageAt(shot.w, dist) * (head ? shot.w.headMul : 1) * dmgMul;
+  const r = victim.damage(dmg, ud.part, shot.owner);
+  if (!r.applied) { world.impact(h.point, 'shield'); return; }
   world.impact(h.point, head ? 'head' : 'flesh');
+  if (shot.mine) {
+    shot.dmg += dmg;
+    shot.head ||= head;
+    shot.kill ||= r.killed;
+    shot.point ||= h.point.clone();
+    pendingShots.add(shot);
+  }
+  if (r.killed && match) match.onKill(shot.owner, victim, shot.w, head, false);
 }
 
 function flushHits() {
@@ -224,17 +330,19 @@ const hud = {
 let statT = 0, frames = 0, fps = 0;
 function updateHud(dt, w, a) {
   const ammo = S.ammo[S.wKey];
-  hud.cur.textContent = ammo;
-  hud.cur.classList.toggle('low', ammo <= Math.ceil(w.mag * 0.25));
-  hud.max.textContent = ' / ' + (cfg.infiniteAmmo ? '∞' : S.reserve[S.wKey]);
+  hud.cur.textContent = w.melee ? '—' : ammo;
+  hud.cur.classList.toggle('low', !w.melee && ammo <= Math.ceil(w.mag * 0.25));
+  hud.max.textContent = w.melee ? '' : ' / ' + (cfg.infiniteAmmo ? '∞' : S.reserve[S.wKey]);
   hud.name.textContent = w.name;
   hud.bar.classList.toggle('on', S.reloadT > 0);
   hud.barFill.style.width = S.reloadT > 0 ? (1 - S.reloadT / S.reloadDur) * 100 + '%' : '0';
   hud.ads.classList.toggle('on', S.ads);
+  hud.ads.querySelector('span').textContent = w.melee ? '찌르기' : '조준';
   hud.crouch.classList.toggle('on', S.crouch);
-  hud.mode.textContent = MODE_NAMES[curMode()];
+  hud.mode.textContent = w.melee ? '베기' : MODE_NAMES[curMode()];
   hud.mode.classList.toggle('single-only', w.modes.length < 2);
   hud.scope.textContent = SCOPES[curScopeKey()].name;
+  hud.scope.hidden = !!w.melee;
   frames++;
   statT += dt;
   if (statT >= 0.5) {
@@ -245,7 +353,8 @@ function updateHud(dt, w, a) {
     const hs = S.hits ? Math.round(S.heads / S.hits * 100) : 0;
     const asst = !cfg.assistEnabled ? '꺼짐' : a.target ? `감속 ×${a.friction.toFixed(2)}` : '대기';
     const zone = MAP.zones.find((z) => P.pos.x >= z.x0 && P.pos.x <= z.x1 && P.pos.z >= z.z0 && P.pos.z <= z.z1);
-    hud.stats.textContent = `${CH.name} (${CH.cls})  체력 ${CH.hp}\nFPS ${fps}   킬 ${S.kills}\n명중 ${acc}%   헤드 ${hs}%\n조준보정 ${asst}\n구역: ${zone ? zone.name : '연결 통로'}`;
+    const kd = player ? `킬 ${player.kills} / 데스 ${player.deaths}` : `킬 ${S.kills}`;
+    hud.stats.textContent = `${rules.name} · ${CH.name} (${CH.cls})\nFPS ${fps}   ${kd}\n명중 ${acc}%   헤드 ${hs}%\n조준보정 ${asst}\n구역: ${zone ? zone.name : '연결 통로'}`;
   }
 }
 
@@ -257,13 +366,21 @@ function frame(now) {
   last = now;
   S.time += dt;
 
+  const dead = !!player?.dead;
   const inp = input.consume();
+  if (dead || match?.state === 'end') {
+    // 사망 중에는 조작 불가 (맵 보기만 허용)
+    Object.assign(inp, { moveX: 0, moveY: 0, lookX: 0, lookY: 0, fireHeld: false, firePressed: false, weapon: null, lookActive: false });
+    inp.pressed = new Set([...inp.pressed].filter((p) => p === 'map'));
+    S.ads = false;
+  }
   const press = inp.pressed;
   if (inp.weapon) switchWeapon(inp.weapon);
   const w = WEAPONS[S.wKey];
   if (press.has('reload')) startReload();
   if (press.has('map')) mapView.toggle();
   if (press.has('char')) charSelect.toggle(true);
+  if (press.has('modes')) modeSelect.toggle(true);
   if (world.hitboxVisible !== cfg.showHitboxes) world.setHitboxVisible(cfg.showHitboxes);
   if (press.has('crouch')) S.crouch = !S.crouch;
   if (press.has('mode') && w.modes.length > 1) {
@@ -282,14 +399,19 @@ function frame(now) {
   S.eyeH = lerp(eyeStand, eyeStand * CROUCH_EYE_K, crouchE);
 
   eye.set(P.pos.x, S.eyeH, P.pos.z);
-  const a = assist.update(eye, P.yaw, P.pitch, world, cfg);
+  const a = assist.update(eye, P.yaw, P.pitch, world, cfg, combatants());
 
-  if (press.has('ads') && S.reloadT <= 0) {
-    S.ads = !S.ads;
-    // 조준 시 스냅: ADS 진입 순간 보정 대상 쪽으로 붙음
-    if (S.ads && a.target && cfg.adsSnap > 0) {
-      P.yaw += a.yawErr * cfg.adsSnap * a.weight;
-      P.pitch += a.pitchErr * cfg.adsSnap * a.weight;
+  S.cooldown -= dt;
+  if (press.has('ads')) {
+    if (w.melee) {
+      if (S.cooldown <= 0 && !S.melee) startMelee('stab');
+    } else if (S.reloadT <= 0) {
+      S.ads = !S.ads;
+      // 조준 시 스냅: ADS 진입 순간 보정 대상 쪽으로 붙음
+      if (S.ads && a.target && cfg.adsSnap > 0) {
+        P.yaw += a.yawErr * cfg.adsSnap * a.weight;
+        P.pitch += a.pitchErr * cfg.adsSnap * a.weight;
+      }
     }
   }
   // 정조준 전환 시간 = 무기 기본 + 조준경 배율에 따른 추가 시간
@@ -324,7 +446,7 @@ function frame(now) {
   }
 
   // 이동
-  const baseSpeed = cfg.moveSpeed * CH.speed;
+  const baseSpeed = cfg.moveSpeed * CH.speed * (rules.speedMul ?? 1);
   const crouchSpeed = Math.min(1, 0.5 * passive('crouchSpeed'));
   const sp = baseSpeed * w.mobility * lerp(1, 0.6, adsE) * lerp(1, crouchSpeed, crouchE);
   const sy = Math.sin(P.yaw), cy = Math.cos(P.yaw);
@@ -343,28 +465,32 @@ function frame(now) {
   const mode = curMode();
   if (inp.firePressed) S.fireBuffer = 0.15;
   S.fireBuffer -= dt;
-  let want;
-  if (S.burstLeft > 0) want = true;
-  else if (mode === 'auto') want = inp.fireHeld;
-  else want = S.fireBuffer > 0;
-  if (cfg.autoFire && S.onTarget) want = true;
-  S.cooldown -= dt;
-  if (!want && S.cooldown < 0) S.cooldown = 0;
-  if (want && S.cooldown <= 0 && S.reloadT <= 0) {
-    if (S.ammo[S.wKey] > 0) {
-      if (mode === 'burst' && S.burstLeft === 0) S.burstLeft = w.burstCount;
-      shoot(w, adsE, speedFrac, crouchE);
-      S.fireBuffer = 0;
-      if (S.burstLeft > 0) {
-        S.burstLeft--;
-        S.cooldown += S.burstLeft > 0 ? 60 / w.burstRpm : w.burstDelay;
+  if (w.melee) {
+    if ((inp.fireHeld || S.fireBuffer > 0) && S.cooldown <= 0 && !S.melee) { startMelee('slash'); S.fireBuffer = 0; }
+    if (S.melee && (S.melee.t -= dt) <= 0) resolveMelee();
+  } else {
+    let want;
+    if (S.burstLeft > 0) want = true;
+    else if (mode === 'auto') want = inp.fireHeld;
+    else want = S.fireBuffer > 0;
+    if (cfg.autoFire && S.onTarget && !dead) want = true;
+    if (!want && S.cooldown < 0) S.cooldown = 0;
+    if (want && S.cooldown <= 0 && S.reloadT <= 0) {
+      if (S.ammo[S.wKey] > 0) {
+        if (mode === 'burst' && S.burstLeft === 0) S.burstLeft = w.burstCount;
+        shoot(w, adsE, speedFrac, crouchE);
+        S.fireBuffer = 0;
+        if (S.burstLeft > 0) {
+          S.burstLeft--;
+          S.cooldown += S.burstLeft > 0 ? 60 / w.burstRpm : w.burstDelay;
+        } else {
+          S.cooldown += 60 / w.rpm;
+        }
       } else {
-        S.cooldown += 60 / w.rpm;
+        S.burstLeft = 0;
+        if (inp.firePressed) sfx.dry();
+        startReload();
       }
-    } else {
-      S.burstLeft = 0;
-      if (inp.firePressed) sfx.dry();
-      startReload();
     }
   }
 
@@ -383,8 +509,18 @@ function frame(now) {
   const sh = S.trauma * S.trauma;
   const nt = S.time * 28;
   const bobA = Math.min(1, speedFrac) * (1 - adsE * 0.8);
-  camera.position.set(P.pos.x, S.eyeH + Math.sin(P.bob * 2) * 0.03 * bobA, P.pos.z);
-  camera.rotation.set(P.pitch + noise(nt, 1) * 2.2 * DEG * sh, P.yaw + noise(nt, 2) * 2.2 * DEG * sh, noise(nt, 3) * 3 * DEG * sh);
+  if (dead) {
+    // 사망 카메라: 위로 떠오르며 나를 처치한 적을 바라봄
+    player.deathT = (player.deathT || 0) + dt;
+    camera.position.set(P.pos.x, S.eyeH + Math.min(1.6, player.deathT * 2), P.pos.z + Math.min(1.2, player.deathT * 1.5));
+    const kpos = player.killer?.pos;
+    if (kpos && player.killer !== player) camera.lookAt(kpos.x, 1.2, kpos.z);
+    else camera.rotation.set(-0.6, P.yaw, 0);
+  } else {
+    if (player) player.deathT = 0;
+    camera.position.set(P.pos.x, S.eyeH + Math.sin(P.bob * 2) * 0.03 * bobA, P.pos.z);
+    camera.rotation.set(P.pitch + noise(nt, 1) * 2.2 * DEG * sh, P.yaw + noise(nt, 2) * 2.2 * DEG * sh, noise(nt, 3) * 3 * DEG * sh);
+  }
   const fov = lerp(BASE_FOV, zoomFov(scope.zoom), adsE) + S.fovPunch * cfg.fovPunch;
   if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
   camera.updateMatrixWorld();
@@ -392,38 +528,51 @@ function frame(now) {
   // 십자선이 적 위에 있는지 (빨간 십자선 / 자동 사격)
   aimE.set(P.pitch, P.yaw, 0);
   tmpDir.set(0, 0, -1).applyEuler(aimE);
-  const ch = world.raycast(eye.set(P.pos.x, S.eyeH, P.pos.z), tmpDir, 150);
+  const ch = world.raycast(eye.set(P.pos.x, S.eyeH, P.pos.z), tmpDir, w.melee ? WEAPONS.KN.slash.range + 0.4 : 150, 'A');
   S.onTarget = !!(ch && ch.object.userData.bot);
 
+  if (match) {
+    player.sync(S.eyeH);
+    match.update(dt);
+  }
   world.update(dt, camera, onBulletHit);
   flushHits();
 
   // 조준경 표시: 배율 조준경은 거의 다 들어올렸을 때 총을 숨기고 스코프 화면으로
   const scoped = scope.sight === 'scope' && adsE > 0.85;
   const overlay = scope.sight === 'scope' ? (scoped ? curScopeKey() : null) : (adsE > 0.7 ? curScopeKey() : null);
-  vm.update(dt, { adsE, lookX: ax, lookY: ay, speedFrac, bob: P.bob, hide: scoped, reloadFrac: S.reloadT > 0 ? 1 - S.reloadT / S.reloadDur : -1 });
+  vm.update(dt, { adsE, lookX: ax, lookY: ay, speedFrac, bob: P.bob, hide: scoped || dead, reloadFrac: S.reloadT > 0 ? 1 - S.reloadT / S.reloadDur : -1 });
   const pellet = w.pellets > 1 ? w.pelletSpread * lerp(1, w.adsPelletMul || 1, adsE) : 0;
-  fx.update(dt, { spreadDeg: spreadDeg(w, adsE, speedFrac, crouchE) + pellet, onTarget: S.onTarget, hideCross: adsE > 0.55, overlay, assist: a });
+  fx.update(dt, { spreadDeg: spreadDeg(w, adsE, speedFrac, crouchE) + pellet, onTarget: S.onTarget, hideCross: adsE > 0.55 || dead, overlay: dead ? null : overlay, assist: a });
   updateHud(dt, w, a);
-  mapView.draw(P, S.eyeH);
+  if (mhud) mhud.update(dt, match, player);
+  mapView.draw(P, S.eyeH, combatants());
 
   renderer.render(scene, camera);
 }
 
-switchWeapon(CH.weapon);
+switchWeapon(allowed.includes(CH.weapon) ? CH.weapon : allowed[0]);
 requestAnimationFrame(frame);
 
-// ── 시작 화면 → 캐릭터 선택 ───────────────
+// ── 시작 화면 → 모드 선택 → 캐릭터 선택 ─────
+function requestFullscreen() {
+  if (!matchMedia('(pointer: coarse)').matches || document.fullscreenElement) return;
+  document.documentElement.requestFullscreen?.({ navigationUI: 'hide' })
+    .then(() => screen.orientation?.lock?.('landscape'))
+    .catch(() => { /* 미지원 */ });
+}
 addEventListener('pointerdown', () => sfx.unlock(), { once: true });
-$('#start-btn').addEventListener('click', async () => {
-  sfx.unlock();
+if (URL_STATE.go) {
+  // 모드를 고르고 넘어온 경우: 바로 캐릭터 선택
   $('#start').classList.add('hidden');
   charSelect.toggle(true);
-  if (matchMedia('(pointer: coarse)').matches) {
-    try { await document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }); } catch { /* 미지원 */ }
-    try { await screen.orientation?.lock?.('landscape'); } catch { /* 미지원 */ }
-  }
+}
+$('#start-btn').addEventListener('click', () => {
+  sfx.unlock();
+  $('#start').classList.add('hidden');
+  modeSelect.toggle(true);
+  requestFullscreen();
 });
 
 // 디버그용
-window.__game = { P, S, world, cfg, WEAPONS, mapView, charSelect, get CH() { return CH; } };
+window.__game = { P, S, world, cfg, WEAPONS, mapView, charSelect, modeSelect, rules, get match() { return match; }, get player() { return player; }, get CH() { return CH; } };

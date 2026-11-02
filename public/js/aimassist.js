@@ -15,15 +15,16 @@ export class AimAssist {
     this.weight = 0; this.friction = 1; this.radiusDeg = 0;
   }
 
-  update(eye, yaw, pitch, world, cfg) {
+  // targets: 조준 보정 후보 (적 팀만 대상)
+  update(eye, yaw, pitch, world, cfg, targets = world.bots) {
     this.target = null;
     this.friction = 1;
     this.weight = 0;
     if (!cfg.assistEnabled) return this;
     fwd.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
     let best = 1;
-    for (const b of world.bots) {
-      if (b.dead) continue;
+    for (const b of targets) {
+      if (b.dead || b.team === 'A') continue;
       b.aimPoint(eye, fwd, pt);
       const dx = pt.x - eye.x, dy = pt.y - eye.y, dz = pt.z - eye.z;
       const dist = Math.hypot(dx, dy, dz);

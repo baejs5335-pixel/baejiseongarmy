@@ -23,9 +23,10 @@ export class Sfx {
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.002 + decay);
   }
 
-  shot(w) {
-    if (!this.ctx) return;
-    const c = this.ctx, t = c.currentTime, s = w.sfx;
+  // vol: 거리 감쇠 등 (AI 총성은 멀수록 작게)
+  shot(w, vol = 1) {
+    if (!this.ctx || vol <= 0.01) return;
+    const c = this.ctx, t = c.currentTime, s = { ...w.sfx, gain: w.sfx.gain * vol };
     this.master.gain.value = cfg.volume;
     const n = c.createBufferSource();
     n.buffer = this.noise;
@@ -67,6 +68,24 @@ export class Sfx {
     if (head) { this.tone(1900, 0.05, 'square', 0.14); this.tone(2700, 0.09, 'sine', 0.22, 0.025); }
     else this.tone(1300, 0.04, 'square', 0.12);
   }
+  swing(heavy) {
+    if (!this.ctx) return;
+    const c = this.ctx, t = c.currentTime;
+    this.master.gain.value = cfg.volume;
+    const n = c.createBufferSource();
+    n.buffer = this.noise;
+    const f = c.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 1.2;
+    f.frequency.setValueAtTime(heavy ? 700 : 1400, t);
+    f.frequency.exponentialRampToValueAtTime(heavy ? 2200 : 3800, t + 0.15);
+    const g = c.createGain();
+    this.env(g, t, heavy ? 0.5 : 0.35, heavy ? 0.2 : 0.13);
+    n.connect(f).connect(g).connect(this.master);
+    n.start(t);
+    n.stop(t + 0.3);
+  }
+  hurt() { this.tone(180, 0.09, 'sawtooth', 0.18); }
   kill() { this.tone(660, 0.08, 'triangle', 0.25, 0.04); this.tone(990, 0.16, 'triangle', 0.25, 0.11); }
   dry() { this.tone(900, 0.02, 'square', 0.08); }
   reload() { this.tone(420, 0.03, 'square', 0.1); this.tone(300, 0.03, 'square', 0.1, 0.22); }

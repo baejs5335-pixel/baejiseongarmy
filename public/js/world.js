@@ -16,6 +16,7 @@ class Bot {
     this.flashT = 0;
     this.barT = 0;
 
+    this.team = 'B';
     this.group = new THREE.Group();
     this.group.rotation.order = 'YXZ';
     world.scene.add(this.group);
@@ -53,6 +54,10 @@ class Bot {
     this.model.hitBody.visible = this.model.hitHead.visible = !!v;
   }
 
+  get pos() { return this.group.position; }
+  get chestY() { return this.model.d.chestY; }
+  get headY() { return this.model.d.headY; }
+
   reset(first) {
     this.hp = this.maxHp;
     this.dead = false;
@@ -73,7 +78,7 @@ class Bot {
   }
 
   damage(d, part) {
-    if (this.dead) return { killed: false };
+    if (this.dead) return { applied: false, killed: false };
     this.hp -= d;
     this.flashT = part === 'head' ? 0.1 : 0.07;
     this.barT = 2.5;
@@ -81,9 +86,9 @@ class Bot {
       this.hp = 0;
       this.dead = true;
       this.deathT = 0;
-      return { killed: true };
+      return { applied: true, killed: true };
     }
-    return { killed: false };
+    return { applied: true, killed: false };
   }
 
   update(dt, cam) {
@@ -125,7 +130,7 @@ class Bot {
 }
 
 export class World {
-  constructor(scene, map) {
+  constructor(scene, map, { targets = true } = {}) {
     this.scene = scene;
     this.map = map;
     this.solids = [];
@@ -149,7 +154,7 @@ export class World {
     this.buildFloor();
     for (const b of map.boxes) this.addBox(b);
     // 표적들은 캐릭터를 돌아가며 사용 → 체형/판정 차이를 직접 쏴 보며 비교
-    map.bots.forEach((s, i) => this.bots.push(new Bot(this, s, CHARACTERS[CHAR_ORDER[i % CHAR_ORDER.length]])));
+    if (targets) map.bots.forEach((s, i) => this.bots.push(new Bot(this, s, CHARACTERS[CHAR_ORDER[i % CHAR_ORDER.length]])));
     this.buildFxPools();
   }
 
@@ -263,7 +268,7 @@ export class World {
       const seg = this._seg.copy(b.vel).multiplyScalar(dt);
       const len = seg.length();
       const dir = this._dir.copy(seg).divideScalar(len);
-      const h = this.raycast(b.pos, dir, len);
+      const h = this.raycast(b.pos, dir, len, b.shot.team);
       if (h) {
         b.dist += h.distance;
         this.drawStreak(b, h.point, dir);
@@ -282,18 +287,19 @@ export class World {
   impact(point, kind) {
     const it = this.impacts[this.ii++ % this.impacts.length];
     it.s.position.copy(point);
-    it.s.material.color.setHex(kind === 'flesh' ? 0xff5a3a : kind === 'head' ? 0xffd23f : 0xd9c9a0);
+    it.s.material.color.setHex({ flesh: 0xff5a3a, head: 0xffd23f, shield: 0x6ac8ff }[kind] ?? 0xd9c9a0);
     it.size = kind === 'wall' ? 0.35 : 0.55;
     it.max = it.life = 0.22;
     it.s.visible = true;
   }
 
-  raycast(origin, dir, far) {
+  // ignoreTeam: 같은 팀 판정은 통과 (아군 사격 없음 / 자기 자신 판정 무시)
+  raycast(origin, dir, far, ignoreTeam) {
     this.ray.set(origin, dir);
     this.ray.far = far;
     for (const h of this.ray.intersectObjects(this.hittables, false)) {
       const bot = h.object.userData.bot;
-      if (bot && bot.dead) continue;
+      if (bot && (bot.dead || (ignoreTeam && bot.team === ignoreTeam))) continue;
       return h;
     }
     return null;

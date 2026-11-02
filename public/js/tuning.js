@@ -1,6 +1,6 @@
 // 실시간 튜닝 패널: [조작·타격감] 탭은 SCHEMA에서, [무기 밸런스] 탭은 EDITABLE에서 자동 생성
 import { config, SCHEMA, PRESETS, save, applyPreset, diffFromDefaults } from './config.js';
-import { WEAPONS, WEAPON_ORDER, EDITABLE, MODE_NAMES, getP, setP, saveWeapons, resetWeapon, damageAt } from './weapons.js';
+import { WEAPONS, GUN_ORDER, EDITABLE, MODE_NAMES, getP, setP, saveWeapons, resetWeapon, damageAt } from './weapons.js';
 
 import { CHARACTERS, CHAR_ORDER, CHAR_EDITABLE, saveCharacters, resetCharacter, balance } from './characters.js';
 
@@ -172,7 +172,7 @@ export class Tuning {
     const pane = this.weaponPane;
     const w = WEAPONS[this.wKey];
     pane.innerHTML = `
-      <div class="tn-presets">${WEAPON_ORDER.map((k) => `<button data-w="${k}" class="${k === this.wKey ? 'on' : ''}">${WEAPONS[k].name}</button>`).join('')}</div>
+      <div class="tn-presets">${GUN_ORDER.map((k) => `<button data-w="${k}" class="${k === this.wKey ? 'on' : ''}">${WEAPONS[k].name}</button>`).join('')}</div>
       <div class="tn-wmeta">사격 모드: ${w.modes.map((m) => MODE_NAMES[m]).join(' / ')}${w.pellets > 1 ? ` · 펠릿 ${w.pellets}발` : ''}</div>
       <h3>TTK (체력 100 기준)</h3>
       <div class="tn-ttk"></div>

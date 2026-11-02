@@ -77,7 +77,7 @@ export class MapView {
         <button data-close>닫기</button>
       </div>
       <div class="mv-side"></div>
-      <div class="mv-hint">맵을 탭하면 그 위치로 이동합니다</div>`;
+      <div class="mv-hint">${onTeleport ? '맵을 탭하면 그 위치로 이동합니다' : '매치 중에는 순간이동할 수 없습니다'}</div>`;
     this.canvas = this.el.querySelector('canvas');
     this.ctx = this.canvas.getContext('2d');
     this.side = this.el.querySelector('.mv-side');
@@ -208,7 +208,7 @@ export class MapView {
     const x = this.map.bounds.minX + (py - this.oy) / this.s;
     const { minX, maxX, minZ, maxZ } = this.map.bounds;
     if (x < minX + 0.5 || x > maxX - 0.5 || z < minZ + 0.5 || z > maxZ - 0.5) return;
-    if (this.world.insideBox(x, z, 0.4)) return;
+    if (this.world.insideBox(x, z, 0.4) || !this.onTeleport) return;
     this.onTeleport(x, z);
   }
 
@@ -218,7 +218,7 @@ export class MapView {
     return [a, this.sy(x0), b - a, this.sy(x1) - this.sy(x0)];
   }
 
-  draw(P, eyeH) {
+  draw(P, eyeH, markers) {
     if (!this.open) return;
     this.layout();
     const c = this.ctx, m = this.map, { minX, maxX, minZ, maxZ } = m.bounds;
@@ -291,10 +291,10 @@ export class MapView {
         c.fill();
       }
     }
-    for (const b of this.world.bots) {
-      if (b.dead) continue;
-      const p = b.group.position;
-      c.fillStyle = '#ff3b3b';
+    for (const b of markers) {
+      if (b.dead || b.isPlayer) continue;
+      const p = b.pos;
+      c.fillStyle = b.team === 'A' ? '#4aa8ff' : '#ff3b3b';
       c.strokeStyle = '#000';
       c.lineWidth = 1.5;
       c.beginPath();

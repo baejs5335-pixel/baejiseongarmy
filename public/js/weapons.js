@@ -85,9 +85,26 @@ const BASE = {
   },
 };
 
-export const WEAPON_ORDER = ['AR', 'SMG', 'SR', 'SG', 'HG'];
+// 칼: 발사 = 베기, 조준 버튼 = 찌르기. 등 뒤에서 맞히면 backMul배.
+BASE.KN = {
+  name: '칼', melee: true, modes: ['single'], rpm: 130,
+  slash: { dmg: 50, range: 2.2, angle: 38, windup: 0.08 },
+  stab: { dmg: 100, range: 1.8, angle: 24, windup: 0.22, cooldown: 0.95 },
+  backMul: 2,
+  // 아래는 총기 공용 코드가 참조하는 기본값
+  damage: { near: 50, far: 50, start: 2, end: 3 }, headMul: 1, pellets: 1, pelletSpread: 0,
+  velocity: 1, mag: 1, reserve: 0, reloadTac: 0, reloadEmpty: 0,
+  hip: { base: 0, move: 0, perShot: 0, max: 0 }, ads: { base: 0, move: 0, perShot: 0, max: 0 },
+  crouchMul: 1, recoil: { scale: 0, jitter: 0, adsMul: 1, reset: 1, pattern: [[0, 0]] },
+  scopes: ['iron'], defaultScope: 'iron', adsTime: 0.1, mobility: 1.15,
+  shake: 0.06, kick: 0, fovPunch: 0.4, vib: 14,
+  sfx: { cut: 900, decay: 0.12, thump: 0, gain: 0.3 },
+};
+
+export const WEAPON_ORDER = ['AR', 'SMG', 'SR', 'SG', 'HG', 'KN'];
 export const WEAPONS = structuredClone(BASE);
 for (const k in WEAPONS) WEAPONS[k].key = k;
+export const GUN_ORDER = WEAPON_ORDER.filter((k) => !WEAPONS[k].melee);
 
 // 무기 밸런스 패널에서 수정 가능한 항목
 export const EDITABLE = [

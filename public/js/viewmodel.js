@@ -60,6 +60,12 @@ const BUILDERS = {
     part(g, box(0.012, 0.018, 0.012), METAL, 0, 0.055, -0.1);
     return { muzzle: -0.13, rail: 0.0475, sightZ: 0.02, hip: [0.14, -0.16, -0.42], iron: [0, -0.06, -0.3] };
   },
+  KN(g) {
+    part(g, box(0.012, 0.045, 0.22), 0xdfe6ee, 0, 0.01, -0.13);
+    part(g, box(0.06, 0.018, 0.022), METAL, 0, 0, -0.015);
+    part(g, box(0.03, 0.035, 0.11), ORANGE, 0, -0.005, 0.05);
+    return { muzzle: -0.24, rail: 0.03, sightZ: 0, hip: [0.2, -0.2, -0.36], iron: [0.2, -0.2, -0.36] };
+  },
 };
 
 function buildSights(g, rail, z) {
@@ -141,6 +147,12 @@ export class Viewmodel {
     }
   }
 
+  // 칼 모션: slash = 오른쪽→왼쪽 베기, stab = 앞으로 찌르기
+  swing(kind) {
+    this.swingKind = kind;
+    this.swingT = 0;
+  }
+
   muzzleWorld(out) {
     return this.cur.muzzle.getWorldPosition(out);
   }
@@ -167,6 +179,22 @@ export class Viewmodel {
       p.z + this.kick,
     );
     this.root.rotation.set(this.kickRot * kickK + rl * -0.7 - drop * 0.5, this.swayX * 1.5, rl * 0.35);
+    if (this.swingKind) {
+      const dur = this.swingKind === 'stab' ? 0.5 : 0.3;
+      this.swingT += dt / dur;
+      const t = Math.min(1, this.swingT), arc = Math.sin(Math.PI * t);
+      if (this.swingKind === 'slash') {
+        this.root.position.x += -0.28 * (t - 0.5) * 2 * arc;
+        this.root.position.y += 0.06 * arc;
+        this.root.rotation.y += 1.2 * arc;
+        this.root.rotation.z += -0.9 * arc;
+      } else {
+        this.root.position.z += -0.22 * arc;
+        this.root.position.x += -0.12 * arc;
+        this.root.rotation.x += -0.25 * arc;
+      }
+      if (t >= 1) this.swingKind = null;
+    }
     this.root.visible = !s.hide;
 
     this.flashT -= dt;

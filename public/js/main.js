@@ -10,12 +10,18 @@ import { AimAssist } from './aimassist.js';
 import { Viewmodel } from './viewmodel.js';
 import { Tuning } from './tuning.js';
 import { MapView } from './mapview.js';
+import { CHARACTERS, dims } from './characters.js';
+import { CharSelect, savedCharId } from './charselect.js';
 
 const DEG = Math.PI / 180;
 const BASE_FOV = 65;   // 세로 FOV
-const STAND_EYE = 1.6;
-const CROUCH_EYE = 0.95;
+const CROUCH_EYE_K = 0.6;
 const PLAYER_R = 0.35;
+
+// 플레이어 캐릭터 (이동 속도·눈높이·패시브에 반영)
+let CH = CHARACTERS[savedCharId()];
+const passive = (k) => CH.passive[k] ?? 1;
+const standEye = () => dims(CH).eye;
 
 const $ = (s) => document.querySelector(s);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -48,7 +54,7 @@ const S = {
   wKey: 'AR', ammo: {}, reserve: {}, modeIdx: {}, scopeIdx: {},
   reloadT: 0, reloadDur: 0, cooldown: 0, fireBuffer: 0, lastShot: -9, shotIdx: 0, burstLeft: 0,
   ads: false, adsT: 0, crouch: false, crouchT: 0,
-  bloom: 0, trauma: 0, fovPunch: 0, pendX: 0, pendY: 0, time: 0, eyeH: STAND_EYE,
+  bloom: 0, trauma: 0, fovPunch: 0, pendX: 0, pendY: 0, time: 0, eyeH: standEye(),
   shots: 0, hits: 0, heads: 0, kills: 0, onTarget: false,
 };
 for (const k of WEAPON_ORDER) {
@@ -66,6 +72,11 @@ const mapView = new MapView(MAP, world, (x, z) => { P.pos.set(x, 0, z); P.vel.se
 new Tuning(() => input.applyConfig(), () => {
   // 무기 밸런스 패널에서 탄창 크기를 줄였을 때 현재 탄약 정리
   for (const k of WEAPON_ORDER) S.ammo[k] = Math.min(S.ammo[k], WEAPONS[k].mag);
+}, () => world.rebuildBots());
+
+const charSelect = new CharSelect((id) => {
+  CH = CHARACTERS[id];
+  switchWeapon(CH.weapon);
 });
 
 function resize() {
@@ -103,7 +114,7 @@ function startReload() {
   if (S.reloadT > 0 || S.ammo[S.wKey] >= w.mag) return;
   if (!cfg.infiniteAmmo && S.reserve[S.wKey] <= 0) return;
   // 탄이 남아 있으면 빠른 장전(약실에 한 발 남음), 비었으면 노리쇠 후퇴까지 포함한 긴 장전
-  S.reloadT = S.reloadDur = S.ammo[S.wKey] > 0 ? w.reloadTac : w.reloadEmpty;
+  S.reloadT = S.reloadDur = (S.ammo[S.wKey] > 0 ? w.reloadTac : w.reloadEmpty) * passive('reload');
   S.burstLeft = 0;
   S.ads = false;
   sfx.reload();
@@ -122,7 +133,7 @@ function finishReload() {
 // 현재 탄퍼짐(도): 지향사격 ↔ 정조준 사이를 ADS 진행도로 보간, 앉으면 감소
 function spreadDeg(w, adsE, speedFrac, crouchE) {
   const base = lerp(w.hip.base, w.ads.base, adsE);
-  const move = lerp(w.hip.move, w.ads.move, adsE) * Math.min(1, speedFrac);
+  const move = lerp(w.hip.move, w.ads.move * passive('adsMove'), adsE) * Math.min(1, speedFrac);
   return (base + move + S.bloom) * lerp(1, w.crouchMul, crouchE);
 }
 
@@ -160,7 +171,7 @@ function shoot(w, adsE, speedFrac, crouchE) {
   // 반동 패턴: 발 순서대로 정해진 [위, 오른쪽] + 약간의 랜덤
   const R = w.recoil;
   const [up, side] = R.pattern[Math.min(S.shotIdx, R.pattern.length - 1)];
-  const k = cfg.recoilScale * R.scale * lerp(1, R.adsMul, adsE) * lerp(1, 0.85, crouchE) * DEG;
+  const k = cfg.recoilScale * R.scale * lerp(1, R.adsMul, adsE) * lerp(1, 0.85, crouchE) * passive('recoil') * DEG;
   const kickUp = up * (1 + (Math.random() * 2 - 1) * R.jitter) * k;
   P.pitch += kickUp;
   P.recoilDebt += kickUp;
@@ -234,7 +245,7 @@ function updateHud(dt, w, a) {
     const hs = S.hits ? Math.round(S.heads / S.hits * 100) : 0;
     const asst = !cfg.assistEnabled ? '꺼짐' : a.target ? `감속 ×${a.friction.toFixed(2)}` : '대기';
     const zone = MAP.zones.find((z) => P.pos.x >= z.x0 && P.pos.x <= z.x1 && P.pos.z >= z.z0 && P.pos.z <= z.z1);
-    hud.stats.textContent = `FPS ${fps}   킬 ${S.kills}\n명중 ${acc}%   헤드 ${hs}%\n조준보정 ${asst}\n구역: ${zone ? zone.name : '연결 통로'}`;
+    hud.stats.textContent = `${CH.name} (${CH.cls})  체력 ${CH.hp}\nFPS ${fps}   킬 ${S.kills}\n명중 ${acc}%   헤드 ${hs}%\n조준보정 ${asst}\n구역: ${zone ? zone.name : '연결 통로'}`;
   }
 }
 
@@ -252,6 +263,8 @@ function frame(now) {
   const w = WEAPONS[S.wKey];
   if (press.has('reload')) startReload();
   if (press.has('map')) mapView.toggle();
+  if (press.has('char')) charSelect.toggle(true);
+  if (world.hitboxVisible !== cfg.showHitboxes) world.setHitboxVisible(cfg.showHitboxes);
   if (press.has('crouch')) S.crouch = !S.crouch;
   if (press.has('mode') && w.modes.length > 1) {
     S.modeIdx[S.wKey] = (S.modeIdx[S.wKey] + 1) % w.modes.length;
@@ -265,7 +278,8 @@ function frame(now) {
 
   S.crouchT = clamp(S.crouchT + (S.crouch ? 1 : -1) * dt / 0.15, 0, 1);
   const crouchE = smooth(S.crouchT);
-  S.eyeH = lerp(STAND_EYE, CROUCH_EYE, crouchE);
+  const eyeStand = standEye();
+  S.eyeH = lerp(eyeStand, eyeStand * CROUCH_EYE_K, crouchE);
 
   eye.set(P.pos.x, S.eyeH, P.pos.z);
   const a = assist.update(eye, P.yaw, P.pitch, world, cfg);
@@ -279,7 +293,7 @@ function frame(now) {
     }
   }
   // 정조준 전환 시간 = 무기 기본 + 조준경 배율에 따른 추가 시간
-  S.adsT = clamp(S.adsT + (S.ads ? 1 : -1) * dt / (w.adsTime + scope.adsTimeAdd), 0, 1);
+  S.adsT = clamp(S.adsT + (S.ads ? 1 : -1) * dt / ((w.adsTime + scope.adsTimeAdd) * passive('ads')), 0, 1);
   const adsE = smooth(S.adsT);
 
   if (S.reloadT > 0) {
@@ -310,7 +324,9 @@ function frame(now) {
   }
 
   // 이동
-  const sp = cfg.moveSpeed * w.mobility * lerp(1, 0.6, adsE) * lerp(1, 0.5, crouchE);
+  const baseSpeed = cfg.moveSpeed * CH.speed;
+  const crouchSpeed = Math.min(1, 0.5 * passive('crouchSpeed'));
+  const sp = baseSpeed * w.mobility * lerp(1, 0.6, adsE) * lerp(1, crouchSpeed, crouchE);
   const sy = Math.sin(P.yaw), cy = Math.cos(P.yaw);
   const tx = (-sy * inp.moveY + cy * inp.moveX) * sp;
   const tz = (-cy * inp.moveY - sy * inp.moveX) * sp;
@@ -320,7 +336,7 @@ function frame(now) {
   P.pos.x += P.vel.x * dt;
   P.pos.z += P.vel.z * dt;
   world.collide(P.pos, PLAYER_R);
-  const speedFrac = Math.hypot(P.vel.x, P.vel.z) / cfg.moveSpeed;
+  const speedFrac = Math.hypot(P.vel.x, P.vel.z) / baseSpeed;
   P.bob += Math.hypot(P.vel.x, P.vel.z) * dt * 1.9;
 
   // 사격: 연사 = 누르는 동안, 단발/점사 = 누를 때마다 (0.15초 입력 버퍼)
@@ -394,14 +410,15 @@ function frame(now) {
   renderer.render(scene, camera);
 }
 
-switchWeapon('AR');
+switchWeapon(CH.weapon);
 requestAnimationFrame(frame);
 
-// ── 시작 화면 ─────────────────────────────
+// ── 시작 화면 → 캐릭터 선택 ───────────────
 addEventListener('pointerdown', () => sfx.unlock(), { once: true });
 $('#start-btn').addEventListener('click', async () => {
   sfx.unlock();
   $('#start').classList.add('hidden');
+  charSelect.toggle(true);
   if (matchMedia('(pointer: coarse)').matches) {
     try { await document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }); } catch { /* 미지원 */ }
     try { await screen.orientation?.lock?.('landscape'); } catch { /* 미지원 */ }
@@ -409,4 +426,4 @@ $('#start-btn').addEventListener('click', async () => {
 });
 
 // 디버그용
-window.__game = { P, S, world, cfg, WEAPONS, mapView };
+window.__game = { P, S, world, cfg, WEAPONS, mapView, charSelect, get CH() { return CH; } };

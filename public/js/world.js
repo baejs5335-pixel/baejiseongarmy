@@ -3,11 +3,12 @@ import * as THREE from 'three';
 import { toon, addOutline, radialTexture } from './toon.js';
 import { COLORS } from './maps.js';
 import { GRAVITY } from './weapons.js';
+import { CHARACTERS, CHAR_ORDER, buildCharacter } from './characters.js';
 
 const MAX_BULLET_DIST = 220;
 
 class Bot {
-  constructor(world, spawn) {
+  constructor(world, spawn, char) {
     this.world = world;
     this.spawn = spawn;
     this.dir = Math.random() < 0.5 ? -1 : 1;
@@ -15,33 +16,10 @@ class Bot {
     this.flashT = 0;
     this.barT = 0;
 
-    const g = this.group = new THREE.Group();
-    g.rotation.order = 'YXZ';
-    this.bodyMat = toon(spawn.color || 0xe4574b);
-    this.headMat = toon(0xffd2a6);
-
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.72, 4, 12), this.bodyMat);
-    body.position.y = 0.7;
-    addOutline(body, 0.03);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 16, 12), this.headMat);
-    head.position.y = 1.62;
-    addOutline(head, 0.025);
-    const helm = new THREE.Mesh(new THREE.SphereGeometry(0.27, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), toon(0x4f7f3f));
-    helm.position.y = 1.66;
-    const eyeGeo = new THREE.SphereGeometry(0.035, 8, 6);
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
-    for (const sx of [-0.08, 0.08]) {
-      const e = new THREE.Mesh(eyeGeo, eyeMat);
-      e.position.set(sx, 1.64, 0.215);
-      e.raycast = () => {};
-      g.add(e);
-    }
-    body.userData = { bot: this, part: 'body' };
-    head.userData = { bot: this, part: 'head' };
-    helm.userData = { bot: this, part: 'head' };
-    g.add(body, head, helm);
-    world.scene.add(g);
-    world.hittables.push(body, head, helm);
+    this.group = new THREE.Group();
+    this.group.rotation.order = 'YXZ';
+    world.scene.add(this.group);
+    this.setCharacter(char);
 
     this.bar = new THREE.Group();
     const bg = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.09), new THREE.MeshBasicMaterial({ color: 0x111111, transparent: true, opacity: 0.7, depthWrite: false }));
@@ -53,8 +31,30 @@ class Bot {
     this.reset(true);
   }
 
+  // 캐릭터 모델 교체 (밸런스 패널에서 체형을 바꾸면 다시 만듦)
+  setCharacter(char) {
+    const hits = this.world.hittables;
+    if (this.model) {
+      this.group.remove(this.model.group);
+      for (const m of [this.model.hitBody, this.model.hitHead]) hits.splice(hits.indexOf(m), 1);
+    }
+    this.char = char;
+    this.model = buildCharacter(char);
+    this.model.hitBody.userData = { bot: this, part: 'body' };
+    this.model.hitHead.userData = { bot: this, part: 'head' };
+    this.group.add(this.model.group);
+    hits.push(this.model.hitBody, this.model.hitHead);
+    this.setHitboxVisible(this.world.hitboxVisible);
+    this.maxHp = char.hp;
+    if (!this.dead) this.hp = Math.min(this.hp ?? char.hp, char.hp);
+  }
+
+  setHitboxVisible(v) {
+    this.model.hitBody.visible = this.model.hitHead.visible = !!v;
+  }
+
   reset(first) {
-    this.hp = 100;
+    this.hp = this.maxHp;
     this.dead = false;
     this.deathT = 0;
     this.group.rotation.x = 0;
@@ -68,7 +68,8 @@ class Bot {
     const hd = Math.hypot(p.x - eye.x, p.z - eye.z);
     const fh = Math.max(1e-3, Math.hypot(fwd.x, fwd.z));
     const y = eye.y + fwd.y * (hd / fh);
-    return out.set(p.x, Math.min(1.68, Math.max(0.5, y)), p.z);
+    const d = this.model.d;
+    return out.set(p.x, Math.min(d.headY + 0.06, Math.max(d.bodyTop * 0.35, y)), p.z);
   }
 
   damage(d, part) {
@@ -109,8 +110,8 @@ class Bot {
       this.barT -= dt;
       this.bar.visible = this.barT > 0;
       if (this.bar.visible) {
-        const f = this.hp / 100;
-        this.bar.position.set(p.x, 2.12, p.z);
+        const f = this.hp / this.maxHp;
+        this.bar.position.set(p.x, this.model.d.total + 0.35, p.z);
         this.bar.quaternion.copy(cam.quaternion);
         this.barFg.scale.x = Math.max(0.001, f);
         this.barFg.position.x = -0.33 * (1 - f);
@@ -119,8 +120,7 @@ class Bot {
     }
     const flash = this.flashT > 0 ? 0.85 : 0;
     this.flashT -= dt;
-    this.bodyMat.emissive.setScalar(flash);
-    this.headMat.emissive.setScalar(flash);
+    for (const m of this.model.flashMats) m.emissive.setScalar(flash);
   }
 }
 
@@ -148,7 +148,8 @@ export class World {
 
     this.buildFloor();
     for (const b of map.boxes) this.addBox(b);
-    for (const s of map.bots) this.bots.push(new Bot(this, s));
+    // 표적들은 캐릭터를 돌아가며 사용 → 체형/판정 차이를 직접 쏴 보며 비교
+    map.bots.forEach((s, i) => this.bots.push(new Bot(this, s, CHARACTERS[CHAR_ORDER[i % CHAR_ORDER.length]])));
     this.buildFxPools();
   }
 
@@ -304,6 +305,16 @@ export class World {
     this.ray.set(from, d.normalize());
     this.ray.far = dist - 0.05;
     return this.ray.intersectObjects(this.solids, false).length > 0;
+  }
+
+  setHitboxVisible(v) {
+    this.hitboxVisible = v;
+    for (const b of this.bots) b.setHitboxVisible(v);
+  }
+
+  // 밸런스 패널에서 체형/체력이 바뀌면 표적 모델을 다시 만듦
+  rebuildBots() {
+    for (const b of this.bots) b.setCharacter(b.char);
   }
 
   insideBox(x, z, pad) {

@@ -38,6 +38,7 @@ export const DEFAULTS = {
   muzzleFlash: true,
   damageNumbers: true,
   infiniteAmmo: true,
+  showHitboxes: false,
   // 진동 / 사운드
   vibration: true,
   vibrationScale: 1.0,
@@ -86,6 +87,7 @@ export const SCHEMA = [
     { key: 'muzzleFlash', label: '총구 화염', type: 'bool' },
     { key: 'damageNumbers', label: '데미지 숫자', type: 'bool' },
     { key: 'infiniteAmmo', label: '예비 탄약 무한', type: 'bool' },
+    { key: 'showHitboxes', label: '표적 피격 판정 표시', type: 'bool', hint: '초록 와이어프레임 = 실제로 맞는 범위' },
   ] },
   { group: '진동 · 사운드', items: [
     { key: 'vibration', label: '진동', type: 'bool', hint: 'Android 브라우저만 지원 (iOS Safari는 진동 API 미지원)' },

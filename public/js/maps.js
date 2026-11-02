@@ -75,13 +75,13 @@ export const MAP = {
   },
   // 연습용 표적 (B팀 위치)
   bots: [
-    { x: -22, z: -33, lane: 3, speed: 1.8, color: 0x4a7fe0 },  // 저격 거점에서 좌우 피킹
+    { x: -22, z: -33, lane: 3, speed: 1.8 },  // 저격 거점에서 좌우 피킹
     { x: -24, z: -15, lane: 4, speed: 2.6 },                   // 저격 라인 이동
     { x: -4, z: -12, lane: 3, speed: 3 },                      // 중앙 좌우 이동
     { x: 6, z: -18, lane: 0, speed: 0 },                       // 중앙 정지
-    { x: -12.25, z: -10, lane: 0, speed: 0, color: 0xe08a3a }, // 우회 골목
+    { x: -12.25, z: -10, lane: 0, speed: 0 }, // 우회 골목
     { x: 22, z: -9, lane: 3, speed: 2.5 },                     // 창고 방
-    { x: 20, z: -26, lane: 0, speed: 0, color: 0xe08a3a },     // 창고 코너
+    { x: 20, z: -26, lane: 0, speed: 0 },     // 창고 코너
     { x: 0, z: -41, lane: 5, speed: 2.2 },                     // B 스폰
     { x: -4, z: 12, lane: 2, speed: 2 },                       // 아군 진영 침투
   ],

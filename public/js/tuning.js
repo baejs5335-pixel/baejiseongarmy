@@ -2,14 +2,18 @@
 import { config, SCHEMA, PRESETS, save, applyPreset, diffFromDefaults } from './config.js';
 import { WEAPONS, WEAPON_ORDER, EDITABLE, MODE_NAMES, getP, setP, saveWeapons, resetWeapon, damageAt } from './weapons.js';
 
+import { CHARACTERS, CHAR_ORDER, CHAR_EDITABLE, saveCharacters, resetCharacter, balance } from './characters.js';
+
 const TTK_DIST = [5, 15, 30, 50, 80];
 
 const decimals = (step) => (step >= 1 ? 0 : String(step).split('.')[1].length);
 
 export class Tuning {
-  constructor(onChange, onWeaponChange) {
+  constructor(onChange, onWeaponChange, onCharChange) {
     this.onChange = onChange;
     this.onWeaponChange = onWeaponChange;
+    this.onCharChange = onCharChange;
+    this.cKey = 'leo';
     this.panel = document.getElementById('tuning');
     this.btn = document.getElementById('btn-tune');
     this.inputs = {};
@@ -27,9 +31,10 @@ export class Tuning {
     const p = this.panel;
     p.innerHTML = `
       <div class="tn-head"><b>⚙ 튜닝</b><button data-close>닫기</button></div>
-      <div class="tn-tabs"><button data-tab="feel" class="on">조작 · 타격감</button><button data-tab="weapon">무기 밸런스</button></div>
+      <div class="tn-tabs"><button data-tab="feel" class="on">조작 · 타격감</button><button data-tab="weapon">무기</button><button data-tab="char">캐릭터</button></div>
       <div data-pane="feel"></div>
-      <div data-pane="weapon" hidden></div>`;
+      <div data-pane="weapon" hidden></div>
+      <div data-pane="char" hidden></div>`;
     p.querySelector('[data-close]').addEventListener('click', () => this.toggle(false));
     p.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {
       p.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x === b));
@@ -38,6 +43,56 @@ export class Tuning {
     this.buildFeel(p.querySelector('[data-pane=feel]'));
     this.weaponPane = p.querySelector('[data-pane=weapon]');
     this.buildWeapon();
+    this.charPane = p.querySelector('[data-pane=char]');
+    this.buildChar();
+  }
+
+  // ── 캐릭터 밸런스 ─────────────────────────
+  buildChar() {
+    const pane = this.charPane;
+    const c = CHARACTERS[this.cKey];
+    pane.innerHTML = `
+      <h3>전체 비교 (레오 = 100)</h3>
+      <div class="tn-cmp"></div>
+      <div class="tn-presets">${CHAR_ORDER.map((k) => `<button data-c="${k}" class="${k === this.cKey ? 'on' : ''}">${CHARACTERS[k].name}</button>`).join('')}</div>
+      <div class="tn-wmeta">${c.cls} · 패시브: ${c.passive.text}</div>
+      <div class="tn-crows"></div>
+      <div class="tn-foot"><button data-creset>이 캐릭터 초기화</button><button data-copy>변경값 복사 (JSON)</button></div>
+      <textarea readonly hidden></textarea>`;
+    pane.querySelectorAll('[data-c]').forEach((b) => b.addEventListener('click', () => { this.cKey = b.dataset.c; this.buildChar(); }));
+    pane.querySelector('[data-creset]').addEventListener('click', () => { resetCharacter(this.cKey); this.onCharChange(); this.buildChar(); });
+    this.copyButton(pane, () => saveCharacters());
+    const rows = pane.querySelector('.tn-crows');
+    for (const e of CHAR_EDITABLE) {
+      const el = document.createElement('div');
+      el.className = 'tn-row';
+      el.innerHTML = `<label>${e.label}</label><span class="val"></span><input type="range" min="${e.min}" max="${e.max}" step="${e.step}">`;
+      const inp = el.querySelector('input'), val = el.querySelector('.val');
+      const show = () => { val.textContent = c[e.key].toFixed(decimals(e.step)); };
+      inp.value = c[e.key];
+      show();
+      inp.addEventListener('input', () => {
+        c[e.key] = parseFloat(inp.value);
+        show();
+        saveCharacters();
+        this.renderCmp();
+        this.onCharChange();
+      });
+      rows.appendChild(el);
+    }
+    this.renderCmp();
+  }
+
+  // 생존력 지수 = 체력 ÷ 판정 면적. 속도까지 높은 캐릭터가 지수도 높으면 너무 강하다는 신호
+  renderCmp() {
+    const rows = CHAR_ORDER.map((k) => {
+      const c = CHARACTERS[k], b = balance(c);
+      const warn = c.speed > 1 && b.survival > 105 ? ' class="warn"' : '';
+      return `<tr${warn}><td>${c.name}</td><td>×${c.speed.toFixed(2)}</td><td>${c.hp}</td><td>${b.areaPct.toFixed(0)}%</td><td>${b.survival.toFixed(0)}</td></tr>`;
+    }).join('');
+    this.charPane.querySelector('.tn-cmp').innerHTML = `
+      <table><tr><th>캐릭터</th><th>속도</th><th>체력</th><th>판정</th><th>생존력</th></tr>${rows}</table>
+      <div class="hint">빨간 줄 = 빠른데 생존력도 높음 (밸런스 주의)</div>`;
   }
 
   // ── 조작 · 타격감 ─────────────────────────

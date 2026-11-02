@@ -3,11 +3,13 @@ import * as THREE from 'three';
 import { toon, addOutline, radialTexture } from './toon.js';
 
 const DARK = 0x3a3f4b, ORANGE = 0xf08a2e, GREEN = 0x5a7d43, WOOD = 0x8b5a2b, METAL = 0x2a2d36, BLUE = 0x3d7fd6;
+const ACCENTS = [ORANGE, GREEN, WOOD, BLUE];
 
 function part(group, geo, color, x, y, z, rx = 0) {
   const m = new THREE.Mesh(geo, toon(color));
   m.position.set(x, y, z);
   m.rotation.x = rx;
+  if (ACCENTS.includes(color)) m.userData.accent = color;
   addOutline(m, 0.004);
   group.add(m);
   return m;
@@ -100,8 +102,19 @@ export class Viewmodel {
       g.add(muzzle);
       g.visible = false;
       this.root.add(g);
+      // 등급 색상이 바뀌는 강조 파츠
+      const accents = [];
+      g.traverse((o) => {
+        if (o.userData.accent) accents.push({ mat: o.material, base: o.userData.accent });
+      });
+      // 소음기 (장착 시 총구가 앞으로 나감)
+      const sup = new THREE.Mesh(cyl(0.024, 0.16), toon(METAL));
+      sup.position.set(0, 0.01, info.muzzle - 0.08);
+      addOutline(sup, 0.004);
+      sup.visible = false;
+      g.add(sup);
       this.guns[k] = {
-        g, muzzle, rail: info.rail, sights: buildSights(g, info.rail, info.sightZ),
+        g, muzzle, accents, sup, muzzleZ: info.muzzle, rail: info.rail, sights: buildSights(g, info.rail, info.sightZ),
         hip: new THREE.Vector3(...info.hip), iron: new THREE.Vector3(...info.iron),
       };
     }
@@ -145,6 +158,18 @@ export class Viewmodel {
       this.flash.material.rotation = Math.random() * Math.PI * 2;
       this.flash.scale.setScalar((w.pellets > 1 ? 0.32 : 0.22) * (0.85 + Math.random() * 0.3));
     }
+  }
+
+  // 육성 반영: 등급 색 (일반 = 원래 색 / 희귀 = 파랑 / 전설 = 금색 발광), 소음기 모델
+  setLoadout(k, w) {
+    const c = this.guns[k];
+    if (!c) return;
+    for (const a of c.accents) {
+      a.mat.color.setHex([a.base, 0x4a8cff, 0xffc933][w.grade || 0]);
+      a.mat.emissive.setHex(w.grade === 2 ? 0x664400 : 0x000000);
+    }
+    c.sup.visible = !!w.suppressed;
+    c.muzzle.position.z = c.muzzleZ - (w.suppressed ? 0.16 : 0);
   }
 
   // 칼 모션: slash = 오른쪽→왼쪽 베기, stab = 앞으로 찌르기

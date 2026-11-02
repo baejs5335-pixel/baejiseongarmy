@@ -20,6 +20,8 @@ import { Voice, ANNOUNCER } from './voice.js';
 import { Minimap } from './minimap.js';
 import { Layout } from './layout.js';
 import { surfaceAt } from './maps.js';
+import { Progression } from './progression.js';
+import { Lobby } from './lobby.js';
 
 const DEG = Math.PI / 180;
 const BASE_FOV = 65;   // 세로 FOV
@@ -62,6 +64,10 @@ const vm = new Viewmodel(camera);
 const input = new Input();
 const assist = new AimAssist();
 const voice = new Voice();
+// 육성: 강화·파츠가 적용된 내 무기 스펙 (AI는 기본 스펙 사용)
+const prog = new Progression();
+let EFF = {};
+const gun = (k) => EFF[k] || (EFF[k] = prog.effective(k));
 const minimap = new Minimap(MAP);
 const layout = new Layout(input, () => input.applyConfig());
 // 내 캐릭터 목소리 / 아군 AI 목소리
@@ -81,8 +87,8 @@ const S = {
 };
 function refillAmmo() {
   for (const k of WEAPON_ORDER) {
-    S.ammo[k] = WEAPONS[k].mag;
-    S.reserve[k] = WEAPONS[k].reserve;
+    S.ammo[k] = gun(k).mag;
+    S.reserve[k] = gun(k).reserve;
   }
 }
 refillAmmo();
@@ -92,6 +98,23 @@ for (const k of WEAPON_ORDER) {
   S.scopeIdx[k] = w.scopes.indexOf(w.defaultScope);
 }
 document.querySelectorAll('[data-weapon]').forEach((b) => { b.hidden = !allowed.includes(b.dataset.weapon); });
+
+// 병영에서 강화·파츠를 바꾸면 스펙·외형·탄창을 다시 계산
+function refreshLoadout() {
+  EFF = {};
+  for (const k of WEAPON_ORDER) {
+    const w = gun(k);
+    if (S.ammo[k] > w.mag) S.ammo[k] = w.mag;
+    if (!w.melee) vm.setLoadout(k, w);
+  }
+}
+const lobby = new Lobby(prog, refreshLoadout);
+prog.toast = (text) => {
+  const t = document.createElement('div');
+  t.textContent = '🏅 ' + text;
+  document.getElementById('toast').appendChild(t);
+  setTimeout(() => t.remove(), 3200);
+};
 
 const curScopeKey = () => WEAPONS[S.wKey].scopes[S.scopeIdx[S.wKey]];
 const curMode = () => WEAPONS[S.wKey].modes[S.modeIdx[S.wKey]];
@@ -115,10 +138,11 @@ if (isMatch) {
     },
     onEnd: (winner) => {
       voice.say(winner === 'A' ? 'win' : winner === 'B' ? 'lose' : 'draw', ANNOUNCER, { priority: true });
+      const reward = prog.finishMatch(winner === 'A', player.kills);
       mhud.result(winner, match, () => gotoMode(URL_STATE.mode), () => {
         mhud.resultEl.hidden = true;
         modeSelect.toggle(true);
-      });
+      }, reward, () => lobby.toggle(true));
     },
     hooks: {
       // 적 발소리는 크게, 아군은 작게. 벽 너머는 먹먹하게. 방향은 화면 링에도 표시
@@ -177,6 +201,10 @@ const multi = { n: 0, t: -9 };
 function onPlayerKill(w, head, back) {
   multi.n = S.time - multi.t < 4 ? multi.n + 1 : 1;
   multi.t = S.time;
+  if (match) {
+    prog.event('kill', { w, head, back, crouched: S.crouch });
+    if (multi.n === 2) prog.event('multi');
+  }
   if (multi.n >= 2) voice.say(`multi${Math.min(4, multi.n)}`, ANNOUNCER, { cooldown: 0.5, priority: true });
   else voice.say(w.melee ? 'knife' : head ? 'headshot' : 'kill', me(), { cooldown: 2.5 });
 }
@@ -184,7 +212,7 @@ function onPlayerKill(w, head, back) {
 const mapView = new MapView(MAP, world, isMatch ? null : (x, z) => { P.pos.set(x, 0, z); P.vel.set(0, 0, 0); });
 const tuning = new Tuning(() => input.applyConfig(), () => {
   // 무기 밸런스 패널에서 탄창 크기를 줄였을 때 현재 탄약 정리
-  for (const k of WEAPON_ORDER) S.ammo[k] = Math.min(S.ammo[k], WEAPONS[k].mag);
+  refreshLoadout();
 }, () => world.rebuildBots(), {
   onEditHud: () => { tuning.toggle(false); layout.openEditor(); },
   onVoiceTest: (key) => voice.say(key, ['start', 'multi2'].includes(key) ? ANNOUNCER : me(), { cooldown: 0, priority: true }),
@@ -202,7 +230,7 @@ const charSelect = new CharSelect((id) => {
 const modeSelect = new ModeSelect(URL_STATE.mode, (mode) => {
   if (mode !== URL_STATE.mode || (match && match.state !== 'idle')) gotoMode(mode);
   else charSelect.toggle(true);
-});
+}, () => lobby.toggle(true));
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
@@ -236,7 +264,7 @@ function switchWeapon(k) {
 }
 
 function startReload() {
-  const w = WEAPONS[S.wKey];
+  const w = gun(S.wKey);
   if (w.melee || S.reloadT > 0 || S.ammo[S.wKey] >= w.mag) return;
   if (!cfg.infiniteAmmo && S.reserve[S.wKey] <= 0) return;
   // 탄이 남아 있으면 빠른 장전(약실에 한 발 남음), 비었으면 노리쇠 후퇴까지 포함한 긴 장전
@@ -252,7 +280,7 @@ function startReload() {
 }
 
 function finishReload() {
-  const w = WEAPONS[S.wKey];
+  const w = gun(S.wKey);
   const need = w.mag - S.ammo[S.wKey];
   const take = cfg.infiniteAmmo ? need : Math.min(need, S.reserve[S.wKey]);
   S.ammo[S.wKey] += take;
@@ -322,10 +350,10 @@ function shoot(w, adsE, speedFrac, crouchE) {
   S.bloom = Math.max(S.bloom, Math.min(maxBloom, S.bloom + perShot * cfg.crosshairBloom));
   S.trauma = Math.min(1, S.trauma + w.shake * cfg.shakeIntensity * lerp(1, 0.7, adsE));
   S.fovPunch += w.fovPunch * lerp(1, 0.5, adsE);
-  vm.fire(w, cfg.muzzleFlash);
+  vm.fire(w, cfg.muzzleFlash && !w.noFlash);
   sfx.shot(w);
   fx.vibrate(w.vib);
-  match?.hear(P.pos, 45, player);
+  match?.hear(P.pos, w.hearRadius ?? 45, player);
 }
 
 // 칼: 휘두르기 시작 → windup 후 판정
@@ -394,7 +422,7 @@ function flushHits() {
 const hud = {
   cur: $('#ammo-cur'), max: $('#ammo-max'), name: $('#weapon-name'),
   bar: $('#reload-bar'), barFill: $('#reload-bar i'), stats: $('#stats'),
-  ads: $('#btn-ads'), crouch: $('#btn-crouch'), mode: $('#btn-mode'), scope: $('#btn-scope'),
+  lobbyDot: $('#btn-lobby i'), ads: $('#btn-ads'), crouch: $('#btn-crouch'), mode: $('#btn-mode'), scope: $('#btn-scope'),
 };
 let statT = 0, frames = 0, fps = 0;
 function updateHud(dt, w, a) {
@@ -445,12 +473,14 @@ function frame(now) {
   }
   const press = inp.pressed;
   if (inp.weapon) switchWeapon(inp.weapon);
-  const w = WEAPONS[S.wKey];
+  const w = gun(S.wKey);
   if (press.has('reload')) startReload();
   if (press.has('map')) mapView.toggle();
   if (press.has('char')) charSelect.toggle(true);
   if (press.has('modes')) modeSelect.toggle(true);
   if (press.has('score')) mhud?.toggleBoard();
+  if (press.has('lobby')) lobby.toggle(true);
+  hud.lobbyDot.hidden = !prog.claimable();
   hud.stats.hidden = !cfg.showStats;
   if (world.hitboxVisible !== cfg.showHitboxes) world.setHitboxVisible(cfg.showHitboxes);
   if (press.has('crouch')) S.crouch = !S.crouch;
@@ -671,6 +701,7 @@ function frame(now) {
   renderer.render(scene, camera);
 }
 
+refreshLoadout();
 switchWeapon(allowed.includes(CH.weapon) ? CH.weapon : allowed[0]);
 requestAnimationFrame(frame);
 
@@ -695,4 +726,4 @@ $('#start-btn').addEventListener('click', () => {
 });
 
 // 디버그용
-window.__game = { P, S, world, cfg, WEAPONS, mapView, charSelect, modeSelect, rules, sfx, voice, layout, get match() { return match; }, get player() { return player; }, get CH() { return CH; } };
+window.__game = { P, S, world, cfg, WEAPONS, mapView, charSelect, modeSelect, rules, sfx, voice, layout, prog, lobby, get match() { return match; }, get player() { return player; }, get CH() { return CH; } };

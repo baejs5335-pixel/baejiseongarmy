@@ -6,9 +6,10 @@ const el = (html) => { const t = document.createElement('template'); t.innerHTML
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 export class ModeSelect {
-  constructor(current, onConfirm) {
+  constructor(current, onConfirm, onLobby) {
     this.sel = current;
     this.onConfirm = onConfirm;
+    this.onLobby = onLobby;
     this.el = document.getElementById('modeselect');
   }
 
@@ -23,7 +24,7 @@ export class ModeSelect {
     const m = MODES[this.sel];
     const r = rulesFor(this.sel);
     this.el.innerHTML = `
-      <div class="cs-head"><b>모드 선택</b><span class="cs-sub">규칙은 모드별로 저장됩니다</span></div>
+      <div class="cs-head"><b>모드 선택</b><span class="cs-sub">규칙은 모드별로 저장됩니다</span><button class="ms-lobby">🎒 병영</button></div>
       <div class="ms-body">
         <div class="ms-list">${MODE_ORDER.map((k) => `<button data-m="${k}" class="${k === this.sel ? 'on' : ''}">
           <small>${MODES[k].tag}</small><b>${MODES[k].name}</b></button>`).join('')}</div>
@@ -43,6 +44,7 @@ export class ModeSelect {
       </div>
       <button class="cs-go">다음: 캐릭터 선택</button>`;
     this.el.querySelectorAll('[data-m]').forEach((b) => b.addEventListener('click', () => { this.sel = b.dataset.m; this.render(); }));
+    this.el.querySelector('.ms-lobby').addEventListener('click', () => this.onLobby?.());
     this.el.querySelectorAll('[data-k]').forEach((inp) => inp.addEventListener('input', () => {
       const f = SETTING_FIELDS.find((x) => x.key === inp.dataset.k);
       (modeSettings[this.sel] ||= {})[f.key] = parseFloat(inp.value);
@@ -138,7 +140,8 @@ export class MatchHud {
     setTimeout(() => row.remove(), 6000);
   }
 
-  result(winner, match, onRetry, onModes) {
+  // reward: { gained, gold, ups:[{level, reward}], level, xp, next } (progression.finishMatch)
+  result(winner, match, onRetry, onModes, reward, onLobby) {
     const mine = winner === 'A' ? '승리' : winner === 'B' ? '패배' : '무승부';
     const rows = (team) => match.combatants.filter((c) => c.team === team)
       .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
@@ -151,9 +154,15 @@ export class MatchHud {
       <div class="rs-tables">
         ${['A', 'B'].map((t) => `<table><tr><th class="t${t}">${TEAM_NAME[t]}</th><th>킬</th><th>데스</th></tr>${rows(t)}</table>`).join('')}
       </div>
-      <div class="rs-btns"><button data-retry>다시 하기</button><button data-modes>모드 선택</button></div>`;
+      ${reward ? `<div class="rs-reward">
+        <span>+${reward.gained} XP</span><span>🪙 +${reward.gold}</span>
+        <span class="lv">Lv.${reward.level} <i class="lb-xp"><b style="width:${reward.xp / reward.next * 100}%"></b></i></span>
+        ${reward.ups.map((u) => `<span class="up">⬆ 레벨 ${u.level}! 🪙${u.reward.gold} 💎${u.reward.gems}</span>`).join('')}
+      </div>` : ''}
+      <div class="rs-btns"><button data-retry>다시 하기</button><button data-modes>모드 선택</button>${onLobby ? '<button data-lobby>🎒 병영</button>' : ''}</div>`;
     this.resultEl.hidden = false;
     this.resultEl.querySelector('[data-retry]').addEventListener('click', onRetry);
     this.resultEl.querySelector('[data-modes]').addEventListener('click', onModes);
+    this.resultEl.querySelector('[data-lobby]')?.addEventListener('click', onLobby);
   }
 }
